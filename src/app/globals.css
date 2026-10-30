@@ -24,3 +24,65 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+
+/* Background autofill browser tetap gelap */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px #1c1c1c inset !important;
+  box-shadow: 0 0 0 1000px #1c1c1c inset !important;
+  -webkit-text-fill-color: #ffffff !important;
+  caret-color: #ffffff;
+  transition: background-color 9999s ease-in-out 0s;
+}
+
+/* Placeholder berwarna abu-abu */
+input::placeholder {
+  color: #71717a !important;
+  opacity: 1 !important;
+  -webkit-text-fill-color: #71717a !important;
+}
+
+/* Scrollbar minimalis halaman Projects dan Tasks */
+.projects-scrollbar,
+.tasks-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.projects-scrollbar:hover,
+.tasks-scrollbar:hover {
+  scrollbar-color: #2a2a2a transparent;
+}
+
+.projects-scrollbar::-webkit-scrollbar,
+.tasks-scrollbar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.projects-scrollbar::-webkit-scrollbar-track,
+.tasks-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.projects-scrollbar::-webkit-scrollbar-thumb,
+.tasks-scrollbar::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+}
+
+.projects-scrollbar:hover::-webkit-scrollbar-thumb,
+.tasks-scrollbar:hover::-webkit-scrollbar-thumb {
+  background: #2a2a2a;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: brightness(0) invert(1);
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  margin-right: -32px;
+}
