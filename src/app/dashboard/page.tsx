@@ -1,20 +1,12 @@
 import Link from "next/link";
 import { createClient } from "../../lib/supabase/server";
-
-const COLORS = {
-  page: "#111111",
-  card: "#191919",
-  border: "#262626",
-  accent: "#B7FE1A",
-  secondary: "#A5BDCC",
-  muted: "#A1A1AA",
-};
+import { requireRole } from "../auth/role-guard";
 
 const TEXT = {
-  sectionTitle: "text-lg font-semibold text-white",
-  subtitle: "mt-1 text-sm text-zinc-400",
-  secondary: "mt-1 text-xs text-[#A5BDCC]",
-  action: "text-sm font-medium text-[#B7FE1A]",
+  sectionTitle: "text-lg font-semibold text-[#1f1e30]",
+  subtitle: "mt-1 text-sm text-[#1f1e30]",
+  secondary: "mt-1 text-xs text-[#1f1e30]",
+  action: "text-sm font-medium text-[#1f1e30]",
 };
 
 type Project = {
@@ -23,6 +15,7 @@ type Project = {
   progress: number | null;
   status_id: number | null;
   deadline?: string | null;
+  created_at?: string | null;
   clients?: { company_name: string } | { company_name: string }[] | null;
 };
 
@@ -32,6 +25,16 @@ type DeadlineProject = {
   deadline: string;
   status_id: number | null;
   clients: { company_name: string } | { company_name: string }[] | null;
+};
+
+type Task = {
+  id: number;
+  project_id: number | null;
+  title: string;
+  status: string;
+  deadline?: string | null;
+  due_date?: string | null;
+  projects?: { project_name: string } | { project_name: string }[] | null;
 };
 
 type ActivityLog = {
@@ -59,17 +62,35 @@ function getJakartaDateKey() {
 
 const STATUS = {
   WAITING: 1,
-  BRIEF: 2,
-  MATERIAL: 3,
-  DESIGN: 4,
-  APPROVAL: 5,
-  DEVELOPMENT: 6,
-  CONTENT: 7,
-  REVISION: 8,
-  TESTING: 9,
-  LAUNCH: 10,
+  IN_PROGRESS: 2,
+  ON_HOLD: 12,
   COMPLETED: 11,
 };
+
+function getTaskStatusGroup(status: string | null | undefined) {
+  const normalized = (status ?? "").trim().toLowerCase();
+
+  if (["completed", "complete", "done", "selesai"].includes(normalized)) {
+    return "completed" as const;
+  }
+
+  if (
+    [
+      "in progress",
+      "in_progress",
+      "doing",
+      "review",
+      "revision",
+      "revisi",
+      "dikerjakan",
+      "sedang dikerjakan",
+    ].includes(normalized)
+  ) {
+    return "inProgress" as const;
+  }
+
+  return "pending" as const;
+}
 
 function getDeadlineInfo(deadline: string) {
   const today = getJakartaDateKey();
@@ -138,6 +159,9 @@ function translateAction(action: string | null) {
     EDIT_PROJECT: "Edit proyek",
     DELETE_PROJECT: "Hapus proyek",
     REMOVE_PROJECT: "Hapus proyek",
+    ARCHIVE_PROJECT: "Arsipkan proyek",
+    RESTORE_PROJECT: "Pulihkan proyek",
+    UNARCHIVE_PROJECT: "Pulihkan proyek",
 
     CREATE_TASK: "Tambah tugas",
     ADD_TASK: "Tambah tugas",
@@ -152,6 +176,9 @@ function translateAction(action: string | null) {
     EDIT_CLIENT: "Edit klien",
     DELETE_CLIENT: "Hapus klien",
     REMOVE_CLIENT: "Hapus klien",
+    ARCHIVE_CLIENT: "Arsipkan klien",
+    RESTORE_CLIENT: "Pulihkan klien",
+    UNARCHIVE_CLIENT: "Pulihkan klien",
 
     CREATE_USER: "Tambah pengguna",
     ADD_USER: "Tambah pengguna",
@@ -201,6 +228,10 @@ function translateAction(action: string | null) {
     EDIT: "Edit",
     DELETE: "Hapus",
     REMOVE: "Hapus",
+    ARCHIVE: "Arsipkan",
+    RESTORE: "Pulihkan",
+    UNARCHIVE: "Pulihkan",
+    ACTIVATE: "Aktifkan",
     VIEW: "Lihat",
     UPLOAD: "Unggah",
     DOWNLOAD: "Unduh",
@@ -217,10 +248,12 @@ function translateAction(action: string | null) {
     TOKEN: "tautan",
   };
 
-  return normalized
+  const fallbackLabel = normalized
     .split("_")
     .map((word) => parts[word] || word.toLowerCase())
     .join(" ");
+
+  return fallbackLabel.charAt(0).toUpperCase() + fallbackLabel.slice(1);
 }
 
 /**
@@ -302,10 +335,7 @@ function getActivityColor(action: string | null) {
 
   const normalized = action.trim().toUpperCase().replace(/\s+/g, "_");
 
-  if (
-    normalized.startsWith("DELETE_") ||
-    normalized.startsWith("REMOVE_")
-  ) {
+  if (normalized.startsWith("DELETE_") || normalized.startsWith("REMOVE_")) {
     return "red";
   }
 
@@ -313,7 +343,10 @@ function getActivityColor(action: string | null) {
     normalized.startsWith("CREATE_") ||
     normalized.startsWith("ADD_") ||
     normalized.startsWith("GENERATE_") ||
-    normalized.startsWith("UPLOAD_")
+    normalized.startsWith("UPLOAD_") ||
+    normalized.startsWith("ARCHIVE_") ||
+    normalized.startsWith("RESTORE_") ||
+    normalized.startsWith("UNARCHIVE_")
   ) {
     return "green";
   }
@@ -326,20 +359,104 @@ function getActivityColor(action: string | null) {
 }
 
 export default async function DashboardPage() {
+  const profile = await requireRole(["Admin", "Project Manager", "Staff"]);
+
   const supabase = await createClient();
+  const userId = profile.id;
+  const isStaff = profile.role === "Staff";
 
-  const [
-    { data: projectData, error: projectError },
-    { data: deadlineData, error: deadlineError },
-    { data: activityData, error: activityError },
-  ] = await Promise.all([
-    supabase
-      .from("projects")
-      .select("id, project_name, progress, status_id, deadline"),
+  // Tugas Staff diambil langsung berdasarkan assigned_to.
+  const taskQuery = isStaff
+    ? supabase
+        .from("tasks")
+        .select(
+          `
+        id,
+        project_id,
+        title,
+        status,
+        deadline,
+        due_date,
+        projects (
+          project_name
+        )
+      `,
+        )
+        .eq("assigned_to", userId)
+    : supabase
+        .from("tasks")
+        .select(
+          `
+          id,
+          project_id,
+          title,
+          status,
+          deadline,
+          due_date,
+          projects!inner (
+            project_name,
+            is_archived
+          )
+        `,
+        )
+        .eq("projects.is_archived", false);
 
-    supabase
+  const { data: taskData, error: taskError } = await taskQuery;
+
+  // Mengambil ID proyek dari task yang ditugaskan kepada Staff.
+  const assignedProjectIds = isStaff
+    ? [
+        ...new Set(
+          (taskData ?? [])
+            .map((task) => task.project_id)
+            .filter((id): id is number => id !== null),
+        ),
+      ]
+    : [];
+
+  // STATISTIK PROYEK
+  const scopedProjectPromise = (() => {
+    let query = supabase
       .from("projects")
-      .select(`
+      .select("id, project_name, progress, status_id, deadline, created_at")
+      .eq("is_archived", false);
+
+    if (isStaff) {
+      if (assignedProjectIds.length > 0) {
+        query = query.or(
+          `pic.eq.${userId},id.in.(${assignedProjectIds.join(",")})`,
+        );
+      } else {
+        query = query.eq("pic", userId);
+      }
+    }
+
+    return query;
+  })();
+
+  // TREN PROYEK BULANAN
+  const monthlyProjectPromise = (() => {
+    let query = supabase.from("projects").select("id, created_at");
+
+    if (isStaff) {
+      if (assignedProjectIds.length > 0) {
+        query = query.or(
+          `pic.eq.${userId},id.in.(${assignedProjectIds.join(",")})`,
+        );
+      } else {
+        query = query.eq("pic", userId);
+      }
+    }
+
+    return query;
+  })();
+
+  // DEADLINE PROYEK
+  const deadlinePromise = (() => {
+    let query = supabase
+      .from("projects")
+      .select(
+        `
         id,
         project_name,
         deadline,
@@ -347,23 +464,55 @@ export default async function DashboardPage() {
         clients (
           company_name
         )
-      `)
-      .not("deadline", "is", null)
-      .order("deadline", { ascending: true }),
+      `,
+      )
+      .eq("is_archived", false)
+      .not("deadline", "is", null);
 
-    supabase
-      .from("activity_logs")
-      .select(`
-        id,
-        action,
-        description,
-        created_at,
-        users (
-          name
+    if (isStaff) {
+      if (assignedProjectIds.length > 0) {
+        query = query.or(
+          `pic.eq.${userId},id.in.(${assignedProjectIds.join(",")})`,
+        );
+      } else {
+        query = query.eq("pic", userId);
+      }
+    }
+
+    return query.order("deadline", { ascending: true });
+  })();
+
+  // AKTIVITAS TERBARU
+  // Staff tidak memiliki akses ke Log Aktivitas.
+  // Aktivitas PM tetap dibatasi oleh RLS activity_logs.
+  const activityPromise = isStaff
+    ? Promise.resolve({ data: [], error: null })
+    : supabase
+        .from("activity_logs")
+        .select(
+          `
+          id,
+          action,
+          description,
+          created_at,
+          users (
+            name
+          )
+        `,
         )
-      `)
-      .order("created_at", { ascending: false })
-      .limit(4),
+        .order("created_at", { ascending: false })
+        .limit(3);
+
+  const [
+    { data: projectData, error: projectError },
+    { data: monthlyProjectData, error: monthlyProjectError },
+    { data: deadlineData, error: deadlineError },
+    { data: activityData, error: activityError },
+  ] = await Promise.all([
+    scopedProjectPromise,
+    monthlyProjectPromise,
+    deadlinePromise,
+    activityPromise,
   ]);
 
   // DATA PROYEK
@@ -396,87 +545,146 @@ export default async function DashboardPage() {
       !overdueProjectIds.has(project.id),
   );
 
-  const reviewProjects = projects.filter(
-    (project) =>
-      project.status_id === STATUS.APPROVAL &&
-      !overdueProjectIds.has(project.id),
-  );
-
-  const activeStatusIds = [
-    STATUS.BRIEF,
-    STATUS.MATERIAL,
-    STATUS.DESIGN,
-    STATUS.DEVELOPMENT,
-    STATUS.CONTENT,
-    STATUS.REVISION,
-    STATUS.TESTING,
-    STATUS.LAUNCH,
-  ];
-
   const activeProjects = projects.filter(
     (project) =>
-      project.status_id !== null &&
-      activeStatusIds.includes(project.status_id) &&
+      project.status_id === STATUS.IN_PROGRESS &&
       !overdueProjectIds.has(project.id),
   );
 
   const overdueProjects = overdueProjectList.length;
 
-  const getPercentage = (value: number) =>
-    totalProjects > 0 ? Math.round((value / totalProjects) * 100) : 0;
-
-  const statusItems = [
-    {
-      label: "Dalam Proses",
-      value: activeProjects.length,
-      color: "#29C5F6",
-    },
+  // DATA TASK DAN DISTRIBUSI TASK BERDASARKAN STATUS
+  const tasks = (taskData ?? []) as Task[];
+  const taskStatusItems = [
     {
       label: "Selesai",
-      value: completedProjects.length,
-      color: COLORS.accent,
+      value: tasks.filter(
+        (task) => getTaskStatusGroup(task.status) === "completed",
+      ).length,
+      color: "#1F1E30",
     },
     {
-      label: "Menunggu",
-      value: waitingProjects.length,
-      color: "#83A9D4",
+      label: "Sedang Dikerjakan",
+      value: tasks.filter(
+        (task) => getTaskStatusGroup(task.status) === "inProgress",
+      ).length,
+      color: "#B7FE1A",
     },
     {
-      label: "Persetujuan",
-      value: reviewProjects.length,
-      color: "#9667F5",
-    },
-    {
-      label: "Terlambat",
-      value: overdueProjects,
-      color: "#FF4567",
+      label: "Belum Dikerjakan",
+      value: tasks.filter(
+        (task) => getTaskStatusGroup(task.status) === "pending",
+      ).length,
+      color: "#D6D3D1",
     },
   ];
 
+  const taskChartTotal = taskStatusItems.reduce(
+    (sum, item) => sum + item.value,
+    0,
+  );
   let currentPercentage = 0;
 
-  const chartSegments = statusItems
+  const taskChartSegments = taskStatusItems
     .filter((item) => item.value > 0)
     .map((item) => {
       const start = currentPercentage;
-
       currentPercentage +=
-        totalProjects > 0 ? (item.value / totalProjects) * 100 : 0;
-
+        taskChartTotal > 0 ? (item.value / taskChartTotal) * 100 : 0;
       return `${item.color} ${start}% ${currentPercentage}%`;
     });
 
-  const chartBackground =
-    chartSegments.length > 0
-      ? `conic-gradient(${chartSegments.join(", ")})`
-      : COLORS.border;
+  const taskChartBackground =
+    taskChartSegments.length > 0
+      ? `conic-gradient(${taskChartSegments.join(", ")})`
+      : "#E5E5E5";
+
+  // TASK MENDEKATI DEADLINE: task belum selesai dengan deadline terdekat.
+  const upcomingTasks = tasks
+    .map((task) => ({
+      ...task,
+      effectiveDeadline: task.deadline || task.due_date || null,
+    }))
+    .filter(
+      (task) =>
+        getTaskStatusGroup(task.status) !== "completed" &&
+        task.effectiveDeadline !== null,
+    )
+    .sort((a, b) =>
+      (a.effectiveDeadline || "9999-12-31").localeCompare(
+        b.effectiveDeadline || "9999-12-31",
+      ),
+    )
+    .slice(0, 3);
+
+  // JUMLAH PROYEK PER BULAN (berdasarkan tanggal dibuat)
+  const jakartaParts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(new Date());
+
+  const currentYear = Number(
+    jakartaParts.find((part) => part.type === "year")?.value,
+  );
+  const currentMonth = Number(
+    jakartaParts.find((part) => part.type === "month")?.value,
+  );
+
+  const monthlyProjects = Array.from({ length: 6 }, (_, index) => {
+    // Menampilkan 5 bulan sebelumnya sampai bulan berjalan.
+    const date = new Date(Date.UTC(currentYear, currentMonth - 6 + index, 1));
+    const year = date.getUTCFullYear();
+    const month = date.getUTCMonth() + 1;
+    const key = `${year}-${String(month).padStart(2, "0")}`;
+
+    return {
+      key,
+      label: date.toLocaleDateString("id-ID", {
+        month: "short",
+        timeZone: "UTC",
+      }),
+      value: (
+        (monthlyProjectData ?? []) as { created_at?: string | null }[]
+      ).filter((project) => {
+        if (!project.created_at) return false;
+
+        const createdParts = new Intl.DateTimeFormat("en-CA", {
+          timeZone: "Asia/Jakarta",
+          year: "numeric",
+          month: "2-digit",
+        }).formatToParts(new Date(project.created_at));
+
+        const createdYear = createdParts.find(
+          (part) => part.type === "year",
+        )?.value;
+
+        const createdMonth = createdParts.find(
+          (part) => part.type === "month",
+        )?.value;
+
+        return `${createdYear}-${createdMonth}` === key;
+      }).length,
+    };
+  });
+
+  const monthlyMax = Math.max(...monthlyProjects.map((item) => item.value), 1);
+  const chartAxisStep = Math.max(1, Math.ceil(monthlyMax / 4));
+  const chartAxisMax = chartAxisStep * 4;
+  const chartAxisTicks = [
+    chartAxisMax,
+    chartAxisStep * 3,
+    chartAxisStep * 2,
+    chartAxisStep,
+    0,
+  ];
 
   // DEADLINE PROYEK
   const deadlineProjects: DeadlineProject[] = (
     (deadlineData ?? []) as unknown as DeadlineProject[]
   )
     .filter((project) => project.status_id !== STATUS.COMPLETED)
-    .slice(0, 4);
+    .slice(0, 3);
 
   // AKTIVITAS TERBARU
   const activities: ActivityLog[] = (activityData ?? []).map((item) => {
@@ -493,118 +701,491 @@ export default async function DashboardPage() {
   });
 
   return (
-    <main className="min-h-screen bg-[#111111] px-5 py-6 text-white sm:px-7 lg:px-8">
-      {projectError && (
+    <main className="min-h-screen bg-[#f7f7f5] px-5 pt-3 pb-6 text-[#1f1e30] sm:px-7 lg:px-8">
+      <style>{`
+        @property --pie-angle {
+          syntax: "<angle>";
+          inherits: false;
+          initial-value: 0deg;
+        }
+
+        @property --task-count {
+          syntax: "<integer>";
+          inherits: false;
+          initial-value: 0;
+        }
+
+        @property --stat-count {
+          syntax: "<integer>";
+          inherits: false;
+          initial-value: 0;
+        }
+
+        @keyframes stat-icon-enter {
+          from { opacity: 0; transform: scale(0.72); }
+          to { opacity: 1; transform: scale(1); }
+        }
+
+        @keyframes stat-count-up {
+          from { --stat-count: 0; }
+          to { --stat-count: var(--stat-total); }
+        }
+
+        .dashboard-stat-icon {
+          opacity: 0;
+          animation: stat-icon-enter 500ms cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+
+        .dashboard-stat-count {
+          counter-reset: stat-number var(--stat-count);
+          animation: stat-count-up 1200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+
+        .dashboard-stat-count::before {
+          content: counter(stat-number);
+        }
+
+        @keyframes pie-fill {
+          from { --pie-angle: 0deg; }
+          to { --pie-angle: 360deg; }
+        }
+
+        @keyframes task-count-up {
+          from { --task-count: 0; }
+          to { --task-count: var(--task-total); }
+        }
+
+        @keyframes center-label-enter {
+          from { opacity: 0; transform: translateY(6px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes legend-enter {
+          from { opacity: 0; transform: translateX(14px); }
+          to { opacity: 1; transform: translateX(0); }
+        }
+
+        @keyframes bar-grow {
+          from { transform: scaleY(0); opacity: 0.35; }
+          to { transform: scaleY(1); opacity: 1; }
+        }
+
+        @keyframes chart-axis-enter {
+          from { opacity: 0; transform: translateY(5px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes chart-grid-enter {
+          from { opacity: 0; transform: scaleX(0); }
+          to { opacity: 1; transform: scaleX(1); }
+        }
+
+        .dashboard-chart-axis-label {
+          animation: chart-axis-enter 450ms ease-out both;
+        }
+
+        .dashboard-chart-grid-line {
+          transform-origin: left center;
+          animation: chart-grid-enter 650ms ease-out both;
+        }
+
+        .dashboard-task-count {
+          counter-reset: task-number var(--task-count);
+          animation: task-count-up 1400ms cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+
+        .dashboard-task-count::before {
+          content: counter(task-number);
+        }
+
+        .dashboard-center-label {
+          animation: center-label-enter 500ms ease-out 250ms both;
+        }
+
+        .dashboard-legend-item {
+          opacity: 0;
+          animation: legend-enter 550ms cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+
+        .dashboard-monthly-bar {
+          transform-origin: bottom;
+          animation: bar-grow 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .dashboard-donut-animation,
+          .dashboard-task-count,
+          .dashboard-center-label,
+          .dashboard-legend-item,
+          .dashboard-monthly-bar,
+          .dashboard-chart-axis-label,
+          .dashboard-chart-grid-line {
+            animation: none !important;
+            opacity: 1 !important;
+            transform: none !important;
+          }
+        }
+      `}</style>
+
+      {(projectError || taskError) && (
         <div
           role="alert"
-          className="mb-5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300"
+          className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-[#1f1e30]"
         >
-          Data proyek gagal dimuat. Silakan muat ulang halaman.
+          Data dashboard gagal dimuat. Silakan muat ulang halaman.
         </div>
       )}
 
       {/* STATISTIK */}
       <section
         aria-label="Statistik proyek"
-        className="grid grid-cols-2 gap-4 sm:grid-cols-4"
+        className="grid grid-cols-2 gap-3 sm:grid-cols-4"
       >
         <StatCard
           label="Total Proyek"
           value={totalProjects}
-          icon="folder"
-          color="green"
+          icon="layers"
+          animationIndex={0}
         />
 
         <StatCard
           label="Dalam Proses"
           value={activeProjects.length}
           icon="play"
-          color="blue"
+          animationIndex={1}
         />
 
         <StatCard
           label="Menunggu"
           value={waitingProjects.length}
           icon="clock"
-          color="amber"
+          animationIndex={2}
         />
 
         <StatCard
           label="Selesai"
           value={completedProjects.length}
           icon="check"
-          color="purple"
+          animationIndex={3}
         />
       </section>
 
-      {/* STATUS PROYEK DAN DEADLINE */}
-      <section className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[1.05fr_1fr]">
-        {/* PIE CHART STATUS PROYEK */}
-        <section className="min-w-0 rounded-xl bg-[#191919] p-5 sm:p-6">
-          <h2 className={TEXT.sectionTitle}>
-            Proyek Berdasarkan Status
-          </h2>
+      {/* GRAFIK DASHBOARD */}
+      <section className="mt-5 grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-2">
+        {/* DISTRIBUSI TASK */}
+        <section className="min-w-0 min-h-[340px] rounded-2xl border border-[#EEEEEE] bg-white p-5 shadow-[0_2px_10px_rgba(31,30,48,0.04)] sm:p-6">
+          <div>
+            <h2 className="text-lg font-semibold text-[#1f1e30]">
+              Distribusi Tugas
+            </h2>
+            <p className="mt-1 text-sm text-[#777777]">
+              Jumlah tugas berdasarkan status pengerjaan
+            </p>
+          </div>
 
-          <p className={TEXT.subtitle}>
-            Distribusi proyek berdasarkan status pengerjaan
-          </p>
-
-          <div className="mt-6 flex flex-col items-center gap-6 sm:flex-row sm:gap-7">
-            <div
-              className="h-44 w-44 shrink-0 rounded-full sm:h-[185px] sm:w-[185px]"
-              style={{ background: chartBackground }}
-              role="img"
-              aria-label={`Distribusi status dari ${totalProjects} proyek`}
-            />
+          <div className="mt-8 flex flex-col items-center justify-center gap-6 sm:flex-row sm:gap-7">
+            <div className="relative h-[190px] w-[190px] shrink-0">
+              <div
+                className="dashboard-donut-animation h-full w-full rounded-full"
+                style={{ background: taskChartBackground }}
+                role="img"
+                aria-label={`Distribusi status dari ${taskChartTotal} task`}
+              />
+              <div className="absolute inset-[36px] flex flex-col items-center justify-center rounded-full bg-white">
+                <p
+                  className="dashboard-task-count text-[34px] font-semibold leading-none tracking-tight text-[#1f1e30] tabular-nums"
+                  style={
+                    { "--task-total": taskChartTotal } as React.CSSProperties
+                  }
+                  aria-label={`${taskChartTotal} task`}
+                />
+                <p className="dashboard-center-label mt-1 text-sm font-medium text-[#777777]">
+                  Tugas
+                </p>
+              </div>
+            </div>
 
             <div className="w-full min-w-0 flex-1">
-              {statusItems.map((item) => (
-                <div
-                  key={item.label}
-                  className="flex min-h-[39px] items-center gap-3 border-b border-[#262626] last:border-0"
-                >
-                  <span
-                    className="h-3 w-3 shrink-0 rounded-full"
-                    style={{ backgroundColor: item.color }}
-                  />
-
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-white">
-                    {item.label}
-                  </span>
-
-                  <span className="w-7 text-right text-sm tabular-nums text-white">
-                    {item.value}
-                  </span>
-
-                  <span className="w-10 text-right text-sm tabular-nums text-[#A5BDCC]">
-                    {getPercentage(item.value)}%
-                  </span>
-                </div>
-              ))}
+              <div className="space-y-4">
+                {taskStatusItems.map((item) => (
+                  <div
+                    key={item.label}
+                    className="dashboard-legend-item flex items-start gap-3"
+                    style={{
+                      animationDelay: `${500 + taskStatusItems.indexOf(item) * 180}ms`,
+                    }}
+                  >
+                    <span
+                      className="mt-0.5 h-4 w-4 shrink-0 rounded-md"
+                      style={{ backgroundColor: item.color }}
+                    />
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold leading-tight text-[#1f1e30]">
+                        {item.label}
+                      </p>
+                      <p className="mt-1 text-xs text-[#555563]">
+                        {item.value} tugas
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
+          {taskError && (
+            <p className="mt-3 text-xs text-red-600">
+              Data task gagal dimuat. Silakan muat ulang halaman.
+            </p>
+          )}
         </section>
 
-        {/* DEADLINE TERDEKAT */}
-        <section className="min-w-0 rounded-xl bg-[#191919] p-5 sm:p-6">
-          <SectionHeader
-            title="Deadline Proyek Terdekat"
-            subtitle="Daftar proyek dengan deadline terdekat"
-          />
+        {/* TREN PROYEK BULANAN */}
+        <section className="flex h-full min-w-0 flex-col rounded-2xl border border-[#EEEEEE] bg-white p-5 shadow-[0_2px_10px_rgba(31,30,48,0.04)] sm:p-6">
+          <div>
+            <h2 className="text-lg font-semibold text-[#1f1e30]">
+              Tren Proyek Bulanan
+            </h2>
+            <p className="mt-1 text-sm text-[#777777]">
+              Jumlah proyek yang dibuat selama 6 bulan terakhir
+            </p>
+          </div>
 
+          <div
+            className="mt-12 flex h-[145px] gap-2"
+            role="img"
+            aria-label="Diagram batang jumlah proyek yang dibuat per bulan selama 6 bulan terakhir"
+          >
+            <div className="relative h-[145px] w-6 shrink-0 text-right text-[10px] text-[#777777]">
+              {chartAxisTicks.map((tick, index) => (
+                <span
+                  key={tick}
+                  className="dashboard-chart-axis-label absolute -translate-y-1/2 leading-none"
+                  style={{
+                    top: `${(index / (chartAxisTicks.length - 1)) * 100}%`,
+                    right: tick === 1 ? "1px" : "0px",
+                    animationDelay: `${index * 100}ms`,
+                  }}
+                >
+                  {tick}
+                </span>
+              ))}
+            </div>
+
+            <div className="relative flex h-[145px] min-w-0 flex-1 items-end justify-between">
+              <div className="pointer-events-none absolute inset-0">
+                {chartAxisTicks.map((tick, index) => (
+                  <div
+                    key={tick}
+                    className="dashboard-chart-grid-line absolute inset-x-0 border-t border-[#EEEEEE]"
+                    style={{
+                      top: `${(index / 4) * 100}%`,
+                      animationDelay: `${150 + index * 100}ms`,
+                    }}
+                  />
+                ))}
+              </div>
+              {monthlyProjects.map((item) => {
+                const barHeight = (item.value / chartAxisMax) * 145;
+                const isCurrentMonth =
+                  item.key ===
+                  `${currentYear}-${String(currentMonth).padStart(2, "0")}`;
+
+                return (
+                  <div
+                    key={item.key}
+                    className="relative z-10 flex h-full min-w-0 flex-1 flex-col items-center justify-end"
+                  >
+                    <div
+                      className={`dashboard-monthly-bar w-[12px] rounded-t-md ${
+                        isCurrentMonth ? "bg-[#B7FE1A]" : "bg-[#1f1e30]"
+                      }`}
+                      style={
+                        {
+                          height: `${barHeight}px`,
+                          animationDelay: `${monthlyProjects.indexOf(item) * 100}ms`,
+                        } as React.CSSProperties
+                      }
+                      title={`${item.label}: ${item.value} proyek`}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {monthlyProjectError && (
+            <p role="alert" className="mt-2 text-xs text-red-600">
+              Data tren proyek gagal dimuat. Silakan muat ulang halaman.
+            </p>
+          )}
+
+          <div className="relative top-2 ml-8 mt-1 flex justify-between gap-1">
+            {monthlyProjects.map((item) => (
+              <span
+                key={item.key}
+                className="dashboard-chart-axis-label min-w-0 flex-1 text-center text-[10px] font-medium capitalize text-[#777777]"
+                style={{
+                  animationDelay: `${650 + monthlyProjects.indexOf(item) * 100}ms`,
+                }}
+              >
+                {item.label}
+              </span>
+            ))}
+          </div>
+        </section>
+      </section>
+
+      {/* DAFTAR DEADLINE */}
+      <section className="mt-5 grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-2">
+        {/* DEADLINE TASK TERDEKAT */}
+        <section className="flex h-full min-w-0 flex-col rounded-2xl border border-[#EEEEEE] bg-white p-5 shadow-[0_2px_10px_rgba(31,30,48,0.04)] sm:p-6">
+          {/* HEADER */}
+          <div className="mb-4 flex min-h-[52px] items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className={TEXT.sectionTitle}>Deadline Tugas Terdekat</h2>
+              <p className={TEXT.subtitle}>
+                Daftar tugas yang perlu segera diselesaikan
+              </p>
+            </div>
+
+            <Link
+              href="/dashboard/tasks"
+              className="inline-flex cursor-pointer items-center gap-2 text-sm font-semibold text-[#65A30D] transition-colors hover:text-[#4D7C0F]"
+            >
+              Lihat Semua
+            </Link>
+          </div>
+
+          {/* DAFTAR TASK */}
+          {taskError ? (
+            <p className="flex flex-1 items-center py-4 text-sm text-[#555563]">
+              Data task gagal dimuat. Silakan muat ulang halaman.
+            </p>
+          ) : upcomingTasks.length === 0 ? (
+            <div className="flex min-h-[190px] flex-1 flex-col items-center justify-center px-5 py-8 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#f1ffcc] text-[#1f1e30]">
+                <DashboardIcon name="task" />
+              </div>
+              <h3 className="mt-4 text-sm font-semibold text-[#1f1e30]">
+                Belum Ada Tugas
+              </h3>
+              <p className="mt-1 text-sm text-[#777777]">
+                Tidak ada tugas yang mendekati deadline.
+              </p>
+            </div>
+          ) : (
+            <div className="flex-1">
+              {upcomingTasks.map((task) => {
+                const info = getDeadlineInfo(task.effectiveDeadline as string);
+                const projectRelation = task.projects;
+                const project = Array.isArray(projectRelation)
+                  ? projectRelation[0]
+                  : projectRelation;
+
+                return (
+                  <div
+                    key={task.id}
+                    className="flex min-h-[76px] items-center gap-3 py-3"
+                  >
+                    {/* ICON TASK */}
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#F1FFCC] text-[#1f1e30]">
+                      <span
+                        className="material-symbols-outlined"
+                        aria-hidden="true"
+                        style={{
+                          fontSize: "23px",
+                          fontWeight: 400,
+                          lineHeight: 1,
+                          fontFeatureSettings: '"liga"',
+                        }}
+                      >
+                        task
+                      </span>
+                    </div>
+
+                    {/* INFORMASI TASK */}
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-[#1f1e30]">
+                        {task.title}
+                      </p>
+
+                      <p className="mt-1 truncate text-xs text-[#555563]">
+                        {project?.project_name ||
+                          (isStaff
+                            ? "Proyek terkait"
+                            : "Proyek tidak diketahui")}
+                      </p>
+
+                      <p className="mt-1 text-xs text-[#777777] sm:hidden">
+                        Deadline: {info.date}
+                      </p>
+                    </div>
+
+                    {/* TANGGAL DAN STATUS DEADLINE */}
+                    <div className="flex shrink-0 flex-col items-end gap-2">
+                      <span className="hidden text-xs text-[#555563] sm:block">
+                        {info.date}
+                      </span>
+
+                      <span
+                        className={`inline-flex h-6 w-fit shrink-0 items-center justify-center whitespace-nowrap rounded-full px-4 text-center text-[10px] font-semibold ${
+                          info.color === "red"
+                            ? "bg-[#fce2d3] text-[#1f1e30]"
+                            : info.color === "yellow"
+                              ? "bg-[#ffffc2] text-[#1f1e30]"
+                              : "bg-[#E8F5C8] text-[#1f1e30]"
+                        }`}
+                      >
+                        {info.remaining}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* DEADLINE PROYEK TERDEKAT */}
+        <section className="flex h-full min-w-0 flex-col rounded-2xl border border-[#EEEEEE] bg-white p-5 shadow-[0_2px_10px_rgba(31,30,48,0.04)] sm:p-6">
+          {/* HEADER */}
+          <div className="mb-4 flex min-h-[52px] items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className={TEXT.sectionTitle}>Deadline Proyek Terdekat</h2>
+              <p className={TEXT.subtitle}>
+                Daftar proyek dengan deadline terdekat
+              </p>
+            </div>
+
+            <Link
+              href="/dashboard/projects"
+              className="inline-flex cursor-pointer items-center gap-2 text-sm font-semibold text-[#65A30D] transition-colors hover:text-[#4D7C0F]"
+            >
+              Lihat Semua
+            </Link>
+          </div>
+
+          {/* DAFTAR PROYEK */}
           {deadlineError ? (
-            <p className="py-4 text-sm text-red-300">
+            <p className="flex flex-1 items-center py-4 text-sm text-[#555563]">
               Data deadline gagal dimuat. Silakan muat ulang halaman.
             </p>
           ) : deadlineProjects.length === 0 ? (
-            <p className="py-4 text-sm text-zinc-400">
-              Belum ada proyek dengan deadline yang perlu ditampilkan.
-            </p>
+            <div className="flex min-h-[190px] flex-1 flex-col items-center justify-center px-5 py-8 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#f1ffcc] text-[#1f1e30]">
+                <DashboardIcon name="folder" />
+              </div>
+              <h3 className="mt-4 text-sm font-semibold text-[#1f1e30]">
+                Belum Ada Proyek
+              </h3>
+              <p className="mt-1 text-sm text-[#777777]">
+                Belum ada proyek dengan deadline yang perlu ditampilkan.
+              </p>
+            </div>
           ) : (
-            <div>
-              {deadlineProjects.map((item, index) => {
+            <div className="flex-1">
+              {deadlineProjects.map((item) => {
                 const deadlineInfo = getDeadlineInfo(item.deadline);
-
                 const clientRelation = item.clients;
                 const client = Array.isArray(clientRelation)
                   ? clientRelation[0]
@@ -613,41 +1194,57 @@ export default async function DashboardPage() {
                 return (
                   <div
                     key={item.id}
-                    className={`flex items-center gap-4 py-3 ${
-                      index !== deadlineProjects.length - 1
-                        ? "border-b border-[#262626]"
-                        : ""
-                    }`}
+                    className="flex min-h-[76px] items-center gap-3 py-3"
                   >
+                    {/* ICON PROYEK */}
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#F1FFCC] text-[#1f1e30]">
+                      <span
+                        className="material-symbols-outlined"
+                        aria-hidden="true"
+                        style={{
+                          fontSize: "23px",
+                          fontWeight: 400,
+                          lineHeight: 1,
+                          fontFeatureSettings: '"liga"',
+                        }}
+                      >
+                        folder_open
+                      </span>
+                    </div>
+
+                    {/* INFORMASI PROYEK */}
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-white">
+                      <p className="truncate text-sm font-semibold text-[#1f1e30]">
                         {item.project_name}
                       </p>
 
-                      <p className={TEXT.secondary}>
+                      <p className="mt-1 truncate text-xs text-[#555563]">
                         {client?.company_name || "Klien tidak diketahui"}
                       </p>
 
-                      <p className="mt-1 text-xs text-[#A5BDCC] md:hidden">
-                        {deadlineInfo.date}
+                      <p className="mt-1 text-xs text-[#777777] sm:hidden">
+                        Deadline: {deadlineInfo.date}
                       </p>
                     </div>
 
-                    <span className="hidden shrink-0 text-xs text-[#A5BDCC] md:block">
-                      {deadlineInfo.date}
-                    </span>
+                    {/* TANGGAL DAN STATUS DEADLINE */}
+                    <div className="flex shrink-0 flex-col items-end gap-2">
+                      <span className="hidden text-xs text-[#555563] sm:block">
+                        {deadlineInfo.date}
+                      </span>
 
-                    <span
-                      className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-semibold ${
-                        deadlineInfo.color === "red"
-                          ? "bg-[#451D26] text-[#FF7185]"
-                          : deadlineInfo.color === "yellow"
-                            ? "bg-[#49351A] text-[#FFC46B]"
-                            : "bg-[#202D24] text-[#86D9A1]"
-                      }`}
-                    >
-                      {deadlineInfo.remaining}
-                    </span>
+                      <span
+                        className={`inline-flex h-6 w-fit shrink-0 items-center justify-center whitespace-nowrap rounded-full px-4 text-center text-[10px] font-semibold ${
+                          deadlineInfo.color === "red"
+                            ? "bg-[#fce2d3] text-[#1f1e30]"
+                            : deadlineInfo.color === "yellow"
+                              ? "bg-[#ffffc2] text-[#1f1e30]"
+                              : "bg-[#E8F5C8] text-[#1f1e30]"
+                        }`}
+                      >
+                        {deadlineInfo.remaining}
+                      </span>
+                    </div>
                   </div>
                 );
               })}
@@ -656,83 +1253,91 @@ export default async function DashboardPage() {
         </section>
       </section>
 
-      {/* AKTIVITAS TERBARU */}
-      <section className="mt-5 rounded-xl bg-[#191919] p-5 sm:p-6">
-        <div className="mb-4 flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className={TEXT.sectionTitle}>
-              Ringkasan Aktivitas Terbaru
-            </h2>
+      {/* AKTIVITAS TERBARU: hanya untuk Admin dan Project Manager */}
+      {!isStaff && (
+        <section className="mt-5 flex min-w-0 flex-col rounded-2xl border border-[#EEEEEE] bg-white p-5 shadow-[0_2px_10px_rgba(31,30,48,0.04)] sm:p-6">
+          {/* HEADER */}
+          <div className="mb-4 flex min-h-[52px] items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className={TEXT.sectionTitle}>Ringkasan Aktivitas Terbaru</h2>
+              <p className={TEXT.subtitle}>
+                Daftar aktivitas terbaru yang dapat diakses
+              </p>
+            </div>
 
-            <p className={TEXT.subtitle}>
-              Daftar aktivitas terbaru dari seluruh proyek
+            <Link
+              href="/dashboard/activity-logs"
+              className="inline-flex cursor-pointer items-center gap-2 text-sm font-semibold text-[#65A30D] transition-colors hover:text-[#4D7C0F]"
+            >
+              Lihat Semua
+            </Link>
+          </div>
+
+          {/* DAFTAR AKTIVITAS */}
+          {activityError ? (
+            <p className="flex min-h-[76px] items-center py-4 text-sm text-[#555563]">
+              Data aktivitas gagal dimuat. Silakan muat ulang halaman.
             </p>
-          </div>
+          ) : activities.length === 0 ? (
+            <div className="flex min-h-[190px] flex-1 flex-col items-center justify-center px-5 py-8 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#f1ffcc] text-[#1f1e30]">
+                <DashboardIcon name="clock" />
+              </div>
+              <h3 className="mt-4 text-sm font-semibold text-[#1f1e30]">
+                Belum Ada Aktivitas
+              </h3>
+              <p className="mt-1 text-sm text-[#777777]">
+                Aktivitas pengguna yang tercatat akan ditampilkan di sini.
+              </p>
+            </div>
+          ) : (
+            <div className="flex-1">
+              {activities.map((item) => {
+                const type = getActivityType(item.action);
+                const color = getActivityColor(item.action);
 
-          <Link
-            href="/dashboard/activity-logs"
-            className={`${TEXT.action} shrink-0 transition-colors hover:text-white`}
-          >
-            Lihat Semua
-          </Link>
-        </div>
-
-        {activityError ? (
-          <p className="py-4 text-sm text-red-300">
-            Data aktivitas gagal dimuat. Silakan muat ulang halaman.
-          </p>
-        ) : activities.length === 0 ? (
-          <p className="py-4 text-sm text-zinc-400">
-            Belum ada aktivitas yang tercatat.
-          </p>
-        ) : (
-          <div>
-            {activities.map((item, index) => {
-              const type = getActivityType(item.action);
-              const color = getActivityColor(item.action);
-
-              return (
-                <div
-                  key={item.id}
-                  className={`grid grid-cols-1 gap-2 py-3 sm:grid-cols-[130px_minmax(0,1fr)_auto_100px] sm:items-center sm:gap-4 ${
-                    index !== activities.length - 1
-                      ? "border-b border-[#262626]"
-                      : ""
-                  }`}
-                >
-                  <p className="truncate text-sm font-medium text-white">
-                    {item.name}
-                  </p>
-
-                  <p className={TEXT.secondary}>
-                    {item.description || type}
-                  </p>
-
-                  <span
-                    className={`w-fit rounded-full px-3 py-1 text-[11px] font-semibold ${
-                      color === "green"
-                        ? "bg-[#075C3C] text-white"
-                        : color === "blue"
-                          ? "bg-[#075078] text-white"
-                          : color === "purple"
-                            ? "bg-[#8052DB] text-white"
-                            : color === "red"
-                              ? "bg-[#B91F3B] text-white"
-                              : "bg-[#FFC02E] text-[#17130A]"
-                    }`}
+                return (
+                  <div
+                    key={item.id}
+                    className="flex min-h-[76px] items-center gap-3 py-3"
                   >
-                    {type}
-                  </span>
+                    {/* AVATAR DAN INFORMASI AKTIVITAS */}
+                    <div className="flex min-w-0 flex-1 items-center gap-3">
+                      {/* AVATAR USER */}
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#1f1e30]">
+                        <span className="font-semibold text-[#B7FE1A]">
+                          {item.name?.trim()?.charAt(0)?.toUpperCase() || "U"}
+                        </span>
+                      </div>
 
-                  <p className="mt-1 truncate text-xs text-[#A5BDCC] sm:mt-0 sm:text-right">
-                    {formatRelativeTime(item.created_at)}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
+                      {/* NAMA DAN DESKRIPSI AKTIVITAS */}
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-[#1f1e30]">
+                          {item.name}
+                        </p>
+                        <p className="mt-1 text-xs text-[#555563]">
+                          {item.description || type}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* JENIS AKTIVITAS DAN WAKTU */}
+                    <div className="flex shrink-0 flex-col items-end gap-2">
+                      <span className="inline-flex h-6 w-fit max-w-[150px] items-center justify-center truncate whitespace-nowrap rounded-full bg-[#E8F5C8] px-3 text-[10px] font-semibold text-[#1f1e30]">
+                        {type}
+                      </span>
+
+                      <p className="text-xs text-[#777777]">
+                        {formatRelativeTime(item.created_at)}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
     </main>
   );
 }
@@ -756,35 +1361,46 @@ function StatCard({
   label,
   value,
   icon,
-  color,
+  animationIndex,
 }: {
   label: string;
   value: number | string;
-  icon: "folder" | "clock" | "play" | "check";
-  color: "green" | "blue" | "amber" | "purple";
+  icon: "layers" | "clock" | "play" | "check";
+  animationIndex: number;
 }) {
-  const colors = {
-    green: "bg-[#075E46] text-[#6EE7B7]",
-    blue: "bg-[#084C70] text-[#7DD3FC]",
-    amber: "bg-[#49380A] text-[#FACC15]",
-    purple: "bg-[#4C267A] text-[#D8B4FE]",
-  };
+  const iconColor = "bg-[#F1FFCC] text-[#1f1e30]";
 
   return (
-    <div className="min-w-0 rounded-xl bg-[#191919] p-4 transition-colors sm:p-5">
-      <div className="flex items-center gap-3">
-        <div
-          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${colors[color]}`}
-        >
-          <DashboardIcon name={icon} />
-        </div>
-
-        <p className="text-sm text-[#D4E1EB]">{label}</p>
+    <div className="flex min-w-0 items-center gap-4 rounded-xl border border-[#EEEEEE] bg-white px-5 py-4 shadow-[0_2px_10px_rgba(31,30,48,0.04)]">
+      <div
+        className={`dashboard-stat-icon flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${iconColor}`}
+        style={{ animationDelay: `${animationIndex * 120 + 120}ms` }}
+      >
+        <DashboardIcon name={icon} />
       </div>
 
-      <p className="mt-3 text-3xl font-semibold leading-none tracking-tight text-white tabular-nums">
-        {value}
-      </p>
+      <div className="min-w-0">
+        {typeof value === "number" ? (
+          <p
+            className="dashboard-stat-count text-[26px] font-semibold leading-tight tracking-tight text-[#1f1e30] tabular-nums"
+            style={
+              {
+                "--stat-total": value,
+                animationDelay: `${animationIndex * 120 + 180}ms`,
+              } as React.CSSProperties
+            }
+            aria-label={String(value)}
+          />
+        ) : (
+          <p className="text-[26px] font-semibold leading-tight tracking-tight text-[#1f1e30] tabular-nums">
+            {value}
+          </p>
+        )}
+
+        <p className="mt-0.5 truncate text-sm font-medium leading-tight text-[#1f1e30]">
+          {label}
+        </p>
+      </div>
     </div>
   );
 }
@@ -792,7 +1408,7 @@ function StatCard({
 function DashboardIcon({
   name,
 }: {
-  name: "folder" | "clock" | "play" | "check";
+  name: "folder" | "clock" | "play" | "check" | "task" | "calendar" | "layers";
 }) {
   const common = {
     fill: "none",
@@ -804,8 +1420,8 @@ function DashboardIcon({
 
   return (
     <svg
-      width="21"
-      height="21"
+      width="23"
+      height="23"
       viewBox="0 0 24 24"
       aria-hidden="true"
       {...common}
@@ -824,6 +1440,24 @@ function DashboardIcon({
       {name === "play" && <path d="m8 5 11 7-11 7V5Z" />}
 
       {name === "check" && <path d="m5 12 4 4L19 6" />}
+
+      {name === "task" && (
+        <>
+          <rect x="5" y="4" width="14" height="17" rx="2" />
+          <path d="M9 4.5h6M8 11l2 2 5-5M8 17h8" />
+        </>
+      )}
+
+      {name === "calendar" && (
+        <>
+          <rect x="3" y="5" width="18" height="16" rx="2" />
+          <path d="M7 3v4M17 3v4M3 10h18" />
+        </>
+      )}
+
+      {name === "layers" && (
+        <path d="m12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5" />
+      )}
     </svg>
   );
 }

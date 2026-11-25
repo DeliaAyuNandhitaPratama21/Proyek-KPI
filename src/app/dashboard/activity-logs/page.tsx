@@ -1,11 +1,6 @@
+
 import { createClient } from "../../../lib/supabase/server";
 import { requireRole } from "../../auth/role-guard";
-
-const TEXT = {
-  pageTitle: "text-3xl font-semibold tracking-tight text-white",
-  sectionTitle: "text-lg font-semibold text-white",
-  subtitle: "mt-1 text-sm text-zinc-400",
-};
 
 type ActivityLog = {
   id: number;
@@ -33,6 +28,9 @@ function translateAction(action: string | null): string {
     CREATE_PROJECT: "Tambah proyek",
     UPDATE_PROJECT: "Edit proyek",
     DELETE_PROJECT: "Hapus proyek",
+    ARCHIVE_PROJECT: "Arsipkan proyek",
+    RESTORE_PROJECT: "Pulihkan proyek",
+    UNARCHIVE_PROJECT: "Pulihkan proyek",
 
     CREATE_TASK: "Tambah tugas",
     UPDATE_TASK: "Edit tugas",
@@ -41,6 +39,9 @@ function translateAction(action: string | null): string {
     CREATE_CLIENT: "Tambah klien",
     UPDATE_CLIENT: "Edit klien",
     DELETE_CLIENT: "Hapus klien",
+    ARCHIVE_CLIENT: "Arsipkan klien",
+    RESTORE_CLIENT: "Pulihkan klien",
+    UNARCHIVE_CLIENT: "Pulihkan klien",
 
     CREATE_USER: "Tambah pengguna",
     UPDATE_USER: "Edit pengguna",
@@ -56,7 +57,9 @@ function translateAction(action: string | null): string {
     DELETE_PROJECT_UPDATE: "Hapus pembaruan proyek",
 
     CREATE_FILE: "Unggah berkas",
+    UPLOAD_FILE: "Unggah berkas",
     UPDATE_FILE: "Edit berkas",
+    UPDATE_FILE_VISIBILITY: "Ubah visibilitas berkas",
     DELETE_FILE: "Hapus berkas",
 
     LOGIN: "Masuk ke sistem",
@@ -80,6 +83,10 @@ function translateAction(action: string | null): string {
     EDIT: "Edit",
     DELETE: "Hapus",
     REMOVE: "Hapus",
+    ARCHIVE: "Arsipkan",
+    RESTORE: "Pulihkan",
+    UNARCHIVE: "Pulihkan",
+    ACTIVATE: "Aktifkan",
     VIEW: "Lihat",
     UPLOAD: "Unggah",
     DOWNLOAD: "Unduh",
@@ -96,10 +103,13 @@ function translateAction(action: string | null): string {
     TOKEN: "tautan",
   };
 
-  return normalized
+  const fallbackLabel = normalized
     .split("_")
     .map((word) => parts[word] || word.toLowerCase())
     .join(" ");
+
+  // Pastikan label pill selalu diawali huruf kapital.
+  return fallbackLabel.charAt(0).toUpperCase() + fallbackLabel.slice(1);
 }
 
 /**
@@ -175,7 +185,7 @@ function getProject(projects: ActivityLog["projects"]) {
 }
 
 export default async function ActivityLogsPage() {
-  await requireRole(["Admin"]);
+  await requireRole(["Admin", "Project Manager"]);
 
   const supabase = await createClient();
 
@@ -199,22 +209,15 @@ export default async function ActivityLogsPage() {
 
   if (error) {
     return (
-      <main className="min-h-screen bg-[#111111] px-5 py-6 text-white sm:px-7 lg:px-8">
-        <div className="mb-8 mt-2">
-          <h1 className={TEXT.pageTitle}>Riwayat Aktivitas</h1>
-          <p className={TEXT.subtitle}>
-            Pantau seluruh aktivitas pengguna dalam sistem.
-          </p>
-        </div>
-
+      <main className="min-h-screen bg-[#f7f7f5] px-5 py-6 text-[#1f1e30] sm:px-7 lg:px-8">
         <div
           role="alert"
-          className="max-w-4xl rounded-[22px] border border-red-500/20 bg-[#1c1c1c]/80 p-5"
+          className="max-w-4xl rounded-2xl border border-red-200 bg-white p-5 shadow-[0_2px_10px_rgba(31,30,48,0.04)]"
         >
-          <h2 className="text-sm font-medium text-red-400">
+          <h2 className="text-sm font-medium text-red-700">
             Gagal memuat riwayat aktivitas
           </h2>
-          <p className="mt-2 text-sm text-zinc-400">
+          <p className="mt-2 text-sm text-[#777777]">
             Terjadi kesalahan saat mengambil data aktivitas. Silakan muat ulang halaman.
           </p>
         </div>
@@ -223,37 +226,35 @@ export default async function ActivityLogsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#111111] px-5 py-6 text-white sm:px-7 lg:px-8">
-      <div className="mb-8 mt-2">
-        <h1 className={TEXT.pageTitle}>Riwayat Aktivitas</h1>
-        <p className={TEXT.subtitle}>
-          Pantau seluruh aktivitas pengguna yang tercatat dalam sistem.
-        </p>
-      </div>
-
-      <section className="max-w-full overflow-hidden rounded-[22px] border border-[#2a2a2a] bg-[#1c1c1c]/80">
-        <div className="border-b border-[#262626] px-6 py-5 sm:px-8">
-          <h2 className={TEXT.sectionTitle}>Daftar Aktivitas</h2>
-          <p className={TEXT.subtitle}>
+    <main className="min-h-screen bg-[#f7f7f5] px-5 py-6 text-[#1f1e30] sm:px-7 lg:px-8">
+      <section className="max-w-full overflow-hidden rounded-2xl border border-[#EEEEEE] bg-white shadow-[0_2px_10px_rgba(31,30,48,0.04)]">
+        {/* Header Bagian */}
+        <div className="border-b border-[#EEEEEE] px-6 py-5 sm:px-8">
+          <h2 className="text-lg font-semibold text-[#1f1e30]">
+            Daftar Aktivitas
+          </h2>
+          <p className="mt-1 text-sm text-[#777777]">
             {logs?.length ?? 0} aktivitas tercatat
           </p>
         </div>
 
         {!logs || logs.length === 0 ? (
-          <div className="px-5 py-14 text-center">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-[#262626]">
+          /* Tampilan Ketika Belum Ada Aktivitas */
+          <div className="flex min-h-[338px] flex-col items-center justify-center px-5 py-14 text-center">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-[#f1ffcc]">
               <ActivityIcon />
             </div>
 
-            <h3 className="mt-4 text-sm font-semibold text-white">
-              Belum ada aktivitas
+            <h3 className="mt-4 text-sm font-semibold text-[#1f1e30]">
+              Belum Ada Aktivitas
             </h3>
-            <p className="mt-1 text-sm text-zinc-400">
-              Aktivitas pengguna yang tercatat akan ditampilkan di sini.
+            <p className="mt-1 text-sm text-[#777777]">
+              Belum ada aktivitas pengguna yang tercatat untuk ditampilkan.
             </p>
           </div>
         ) : (
-          <div className="divide-y divide-[#262626]">
+          /* Daftar Aktivitas */
+          <div className="divide-y divide-[#EEEEEE]">
             {logs.map((log: ActivityLog) => {
               const user = getUser(log.users);
               const project = getProject(log.projects);
@@ -269,11 +270,12 @@ export default async function ActivityLogsPage() {
               return (
                 <article
                   key={log.id}
-                  className="px-6 py-5 transition-colors hover:bg-white/[0.02] sm:px-8 sm:py-6"
+                  className="px-6 py-5 sm:px-8 sm:py-6"
                 >
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between lg:gap-6">
                     <div className="flex min-w-0 gap-4">
-                      <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#B7FE1A]/10">
+                      {/* Avatar Pengguna */}
+                      <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#1f1e30]">
                         <span className="text-sm font-semibold text-[#B7FE1A]">
                           {initial}
                         </span>
@@ -281,33 +283,33 @@ export default async function ActivityLogsPage() {
 
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <p className="text-sm font-medium text-white">
+                          <p className="text-sm font-medium text-[#1f1e30]">
                             {user?.name || "Pengguna tidak diketahui"}
                           </p>
 
                           {log.action && (
-                            <span className="inline-flex items-center rounded-full bg-[#B7FE1A]/10 px-3 py-1 text-xs font-medium text-[#B7FE1A]">
+                            <span className="inline-flex items-center rounded-full bg-[#E8F5C8] px-3 py-1 text-xs font-medium text-[#1f1e30]">
                               {translateAction(log.action)}
                             </span>
                           )}
                         </div>
 
                         {user?.email && (
-                          <p className="mt-1 text-xs text-zinc-500">
+                          <p className="mt-1 text-xs text-[#999999]">
                             {user.email}
                           </p>
                         )}
 
                         {log.description && (
-                          <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-zinc-400">
+                          <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-[#555563]">
                             {translateDescription(log.description)}
                           </p>
                         )}
 
                         {project?.project_name && (
-                          <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
-                            <span className="text-zinc-500">Proyek:</span>
-                            <span className="font-medium text-[#A5BDCC]">
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+                            <span className="text-[#999999]">Proyek:</span>
+                            <span className="font-medium text-[#555563]">
                               {project.project_name}
                             </span>
                           </div>
@@ -315,11 +317,12 @@ export default async function ActivityLogsPage() {
                       </div>
                     </div>
 
-                    <div className="shrink-0 pl-14 lg:pl-0 lg:text-right">
-                      <p className="text-xs text-zinc-500">
+                    {/* Waktu Aktivitas */}
+                    <div className="shrink-0 pl-14 lg:min-w-[220px] lg:pl-0 lg:text-right">
+                      <p className="text-xs text-[#999999]">
                         Waktu aktivitas
                       </p>
-                      <p className="mt-1 whitespace-nowrap text-sm text-[#A5BDCC]">
+                      <p className="mt-1 whitespace-nowrap text-sm text-[#555563]">
                         {formatDate(log.created_at)}
                       </p>
                     </div>
@@ -351,7 +354,7 @@ function ActivityIcon() {
         direction: "ltr",
         fontFeatureSettings: '"liga"',
         WebkitFontSmoothing: "antialiased",
-        color: "#B7FE1A",
+        color: "#1f1e30",
       }}
     >
       history

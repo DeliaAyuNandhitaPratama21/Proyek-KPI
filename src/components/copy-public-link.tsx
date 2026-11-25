@@ -23,7 +23,7 @@ export default function CopyPublicLink({
     <button
       type="button"
       onClick={handleCopy}
-      className="rounded-lg bg-lime-400 px-3 py-2 text-xs font-semibold text-black hover:bg-lime-300 transition"
+      className="inline-flex cursor-pointer items-center justify-center rounded-lg bg-[#B7FE1A] px-3 py-1.5 text-sm font-medium text-[#1f1e30] transition-colors hover:bg-[#a8ed12]"
     >
       Copy
     </button>

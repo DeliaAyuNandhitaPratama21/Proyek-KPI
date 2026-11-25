@@ -1,9 +1,9 @@
 "use client";
 
 import {
-  FormEvent,
   useEffect,
   useState,
+  type FormEvent,
   type SelectHTMLAttributes,
 } from "react";
 import Link from "next/link";
@@ -12,13 +12,14 @@ import { createClient } from "../../../../lib/supabase/client";
 import { createActivityLog } from "../../../../lib/activity-log";
 
 type Project = {
-  id: string;
+  id: string | number;
   project_name: string;
+  pic_id: string | null;
 };
 
 type Milestone = {
-  id: string;
-  project_id: string;
+  id: string | number;
+  project_id: string | number;
   name: string;
 };
 
@@ -29,35 +30,32 @@ type User = {
 };
 
 const TEXT = {
-  pageTitle: "text-3xl font-semibold tracking-tight text-white",
-  subtitle: "mt-1 text-sm text-zinc-400",
-  label: "block text-sm font-medium text-white",
+  label: "block text-sm font-medium text-[#1f1e30]",
 
   input:
-    "h-[54px] w-full rounded-xl border border-[#2a2a2a] bg-[#1c1c1c] px-4 text-sm text-white outline-none transition-colors placeholder:text-zinc-500 focus:border-[#B7FE1A] disabled:cursor-not-allowed disabled:opacity-50",
+    "h-[54px] w-full rounded-xl border border-[#EEEEEE] bg-white px-4 text-sm text-[#1f1e30] outline-none transition-colors placeholder:text-[#999999] focus:border-[#1f1e30] disabled:cursor-not-allowed disabled:opacity-50",
 
   textarea:
-    "w-full resize-none rounded-xl border border-[#2a2a2a] bg-[#1c1c1c] px-4 py-3 text-sm leading-6 text-white outline-none transition-colors placeholder:text-zinc-500 focus:border-[#B7FE1A] disabled:opacity-50",
+    "w-full resize-y rounded-xl border border-[#EEEEEE] bg-white px-4 py-3 text-sm leading-6 text-[#1f1e30] outline-none transition-colors placeholder:text-[#999999] focus:border-[#1f1e30] disabled:cursor-not-allowed disabled:opacity-50",
 
   primaryButton:
-    "inline-flex items-center justify-center gap-2 rounded-xl bg-[#B7FE1A] px-5 py-3 text-sm font-semibold text-black transition-colors hover:bg-[#caff57] disabled:cursor-not-allowed disabled:opacity-50",
+    "inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#B7FE1A] px-4 text-sm font-medium text-[#1f1e30] transition-colors hover:bg-[#a8ed12] disabled:cursor-not-allowed disabled:opacity-50 sm:w-[130px]",
 
   secondaryButton:
-    "inline-flex items-center justify-center rounded-xl px-5 py-3 text-sm font-medium text-zinc-400 transition-colors hover:bg-white/[0.05] hover:text-white disabled:cursor-not-allowed disabled:opacity-50",
+    "inline-flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#1f1e30] px-4 text-sm font-normal text-white transition-colors hover:bg-[#333247] disabled:cursor-not-allowed disabled:opacity-50 sm:w-[130px]",
 };
 
 const fieldClass = "flex flex-col gap-2";
 
 const formClass =
-  "flex max-w-4xl flex-col gap-6 rounded-[22px] border border-[#2a2a2a] bg-[#1c1c1c]/80 p-5 sm:p-8";
+  "flex max-w-5xl flex-col gap-6 rounded-2xl border border-[#EEEEEE] bg-white p-5 shadow-[0_2px_10px_rgba(31,30,48,0.04)] sm:p-8";
 
-// Tombol kembali
 function BackLink() {
   return (
-    <div className="mb-5">
+    <div className="mb-6">
       <Link
         href="/dashboard/tasks"
-        className="inline-flex items-center gap-2 text-sm text-zinc-400 transition-colors hover:text-[#B7FE1A]"
+        className="inline-flex cursor-pointer items-center gap-2 text-sm font-semibold text-[#65A30D] transition-colors hover:text-[#4D7C0F]"
       >
         <svg
           width="18"
@@ -78,11 +76,10 @@ function BackLink() {
   );
 }
 
-// Ikon panah dropdown
 function SelectArrow() {
   return (
     <svg
-      className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white"
+      className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#777777]"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -96,7 +93,6 @@ function SelectArrow() {
   );
 }
 
-// Dropdown custom
 function CustomSelect({
   children,
   className,
@@ -106,11 +102,10 @@ function CustomSelect({
     <div className="relative w-full">
       <select
         {...props}
-        className={`${TEXT.input} appearance-none pr-12 ${className || ""}`}
+        className={`${TEXT.input} appearance-none ${className || ""}`}
       >
         {children}
       </select>
-
       <SelectArrow />
     </div>
   );
@@ -118,245 +113,420 @@ function CustomSelect({
 
 export default function NewTaskPage() {
   const router = useRouter();
-  const supabase = createClient();
+  const [supabase] = useState(() => createClient());
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
+  const [assignees, setAssignees] = useState<User[]>([]);
+
+  const [currentUserId, setCurrentUserId] = useState("");
+  const [userRole, setUserRole] = useState("");
 
   const [projectId, setProjectId] = useState("");
   const [milestoneId, setMilestoneId] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [assignedTo, setAssignedTo] = useState("");
-  const [priority, setPriority] = useState("Medium");
-  const [status, setStatus] = useState("Pending");
+  const [priority, setPriority] = useState("");
+  const [status, setStatus] = useState("");
   const [deadline, setDeadline] = useState("");
   const [clientVisible, setClientVisible] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [loadingMilestones, setLoadingMilestones] = useState(false);
+  const [loadingAssignees, setLoadingAssignees] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  // LOAD INITIAL DATA
+  // MEMUAT DATA AWAL
   useEffect(() => {
+    let cancelled = false;
+
     async function loadData() {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
+      setLoading(true);
+      setError("");
 
-      if (userError || !user) {
-        router.push("/login");
-        return;
-      }
+      try {
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
 
-      const { data: profile, error: profileError } = await supabase
-        .from("users")
-        .select("role")
-        .eq("id", user.id)
-        .single();
+        if (cancelled) return;
 
-      if (profileError || !profile) {
-        router.push("/dashboard");
-        return;
-      }
+        if (userError || !user) {
+          router.push("/login");
+          return;
+        }
 
-      if (profile.role !== "Admin" && profile.role !== "Project Manager") {
-        router.push("/dashboard/tasks");
-        return;
-      }
+        const { data: profile, error: profileError } = await supabase
+          .from("users")
+          .select("role")
+          .eq("id", user.id)
+          .single();
 
-      const [projectsResult, usersResult] = await Promise.all([
-        supabase
+        if (cancelled) return;
+
+        if (profileError || !profile) {
+          setError("Data pengguna tidak ditemukan.");
+          return;
+        }
+
+        if (profile.role !== "Admin" && profile.role !== "Project Manager") {
+          router.push("/dashboard/tasks");
+          return;
+        }
+
+        const projectsResult = await supabase
           .from("projects")
-          .select("id, project_name")
-          .order("created_at", { ascending: false }),
+          .select("id, project_name, pic_id")
+          .eq("is_archived", false)
+          .order("created_at", { ascending: false });
 
-        supabase.from("users").select("id, name, role").order("name"),
-      ]);
+        if (cancelled) return;
 
-      if (projectsResult.error) {
-        setError("Data proyek gagal dimuat. Silakan muat ulang halaman.");
-        setLoading(false);
-        return;
+        if (projectsResult.error) {
+          setError(`Data proyek gagal dimuat: ${projectsResult.error.message}`);
+          return;
+        }
+
+        setProjects((projectsResult.data || []) as Project[]);
+        setCurrentUserId(user.id);
+        setUserRole(profile.role);
+      } catch (loadError) {
+        console.error("Load task form error:", loadError);
+
+        if (!cancelled) {
+          setError(
+            loadError instanceof Error
+              ? `Gagal memuat data: ${loadError.message}`
+              : "Terjadi kesalahan saat memuat data.",
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
-
-      if (usersResult.error) {
-        setError("Data pengguna gagal dimuat. Silakan muat ulang halaman.");
-        setLoading(false);
-        return;
-      }
-
-      setProjects(projectsResult.data || []);
-      setUsers(usersResult.data || []);
-      setLoading(false);
     }
 
     loadData();
 
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router]);
+    return () => {
+      cancelled = true;
+    };
+  }, [router, supabase]);
 
-  // LOAD MILESTONES BASED ON PROJECT
+  // MEMUAT PENANGGUNG JAWAB BERDASARKAN ANGGOTA PROYEK
   useEffect(() => {
-    async function loadMilestones() {
+    let cancelled = false;
+
+    async function loadAssignees() {
+      setAssignees([]);
+
       if (!projectId) {
-        setMilestones([]);
-        setMilestoneId("");
+        setLoadingAssignees(false);
+        return;
+      }
+
+      const selectedProject = projects.find(
+        (project) => String(project.id) === String(projectId),
+      );
+
+      if (!selectedProject) {
+        setLoadingAssignees(false);
+        return;
+      }
+
+      setLoadingAssignees(true);
+
+      try {
+        const { data: memberRows, error: membersError } = await supabase
+          .from("project_members")
+          .select("user_id")
+          .eq("project_id", projectId);
+
+        if (membersError) {
+          throw new Error(
+            `Data anggota proyek gagal dimuat: ${membersError.message}`,
+          );
+        }
+
+        const memberIds = (memberRows || []).map((member) => member.user_id);
+        const allowedUserIds = Array.from(
+          new Set(
+            [selectedProject.pic_id, ...memberIds].filter(
+              (id): id is string => Boolean(id),
+            ),
+          ),
+        );
+
+        if (allowedUserIds.length === 0) {
+          if (!cancelled) setAssignees([]);
+          return;
+        }
+
+        const { data: usersData, error: usersError } = await supabase
+          .from("users")
+          .select("id, name, role")
+          .in("id", allowedUserIds)
+          .in("role", ["Project Manager", "Staff"])
+          .order("name", { ascending: true });
+
+        if (usersError) {
+          throw new Error(
+            `Data penanggung jawab gagal dimuat: ${usersError.message}`,
+          );
+        }
+
+        if (!cancelled) {
+          setAssignees((usersData || []) as User[]);
+        }
+      } catch (loadError) {
+        console.error("Load project assignees error:", loadError);
+
+        if (!cancelled) {
+          setAssignees([]);
+          setError(
+            loadError instanceof Error
+              ? loadError.message
+              : "Terjadi kesalahan saat memuat anggota proyek.",
+          );
+        }
+      } finally {
+        if (!cancelled) setLoadingAssignees(false);
+      }
+    }
+
+    loadAssignees();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, projects, supabase]);
+
+  // MEMUAT TAHAPAN BERDASARKAN PROYEK YANG DIPILIH
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadMilestones() {
+      setMilestones([]);
+
+      if (!projectId) {
         setLoadingMilestones(false);
         return;
       }
 
       setLoadingMilestones(true);
-      setMilestoneId("");
       setError("");
 
-      const { data, error } = await supabase
-        .from("milestones")
-        .select("id, project_id, name")
-        .eq("project_id", projectId)
-        .order("sort_order", { ascending: true });
+      try {
+        const { data, error } = await supabase
+          .from("milestones")
+          .select("id, project_id, name")
+          .eq("project_id", projectId)
+          .order("sort_order", { ascending: true });
 
-      if (error) {
-        setError("Data milestone gagal dimuat.");
-        setMilestones([]);
-        setLoadingMilestones(false);
-        return;
+        if (cancelled) return;
+
+        if (error) {
+          setError(`Data tahapan gagal dimuat: ${error.message}`);
+          setMilestones([]);
+          return;
+        }
+
+        setMilestones((data || []) as Milestone[]);
+      } catch (loadError) {
+        console.error("Load milestones error:", loadError);
+
+        if (!cancelled) {
+          setError(
+            loadError instanceof Error
+              ? `Data tahapan gagal dimuat: ${loadError.message}`
+              : "Terjadi kesalahan saat memuat tahapan proyek.",
+          );
+          setMilestones([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingMilestones(false);
+        }
       }
-
-      setMilestones(data || []);
-      setLoadingMilestones(false);
     }
 
     loadMilestones();
 
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, supabase]);
 
-  // CREATE TASK
+  // GANTI PROYEK DAN RESET TAHAPAN
+  function handleProjectChange(newProjectId: string) {
+    setProjectId(newProjectId);
+    setMilestoneId("");
+    setAssignedTo("");
+    setMilestones([]);
+    setAssignees([]);
+    setError("");
+  }
+
+  // TAMBAH TUGAS
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
-    setSaving(true);
+    if (saving || loading) return;
+
     setError("");
 
     if (!projectId) {
       setError("Silakan pilih proyek.");
-      setSaving(false);
       return;
     }
 
     if (!title.trim()) {
-      setError("Judul task wajib diisi.");
-      setSaving(false);
+      setError("Nama tugas wajib diisi.");
       return;
     }
 
-    const { data: task, error: taskError } = await supabase
-      .from("tasks")
-      .insert({
-        project_id: projectId,
-        milestone_id: milestoneId || null,
-        title: title.trim(),
-        description: description.trim() || null,
-        assigned_to: assignedTo || null,
-        priority,
-        status,
-        deadline: deadline || null,
-        client_visible: clientVisible,
-      })
-      .select(
-        `
-        id,
-        project_id,
-        title,
-        assigned_to,
-        status,
-        priority,
-        deadline,
-        client_visible
-      `,
+    if (loadingMilestones) {
+      setError("Tunggu sampai data tahapan selesai dimuat.");
+      return;
+    }
+
+    if (
+      milestoneId &&
+      !milestones.some(
+        (milestone) =>
+          String(milestone.id) === String(milestoneId) &&
+          String(milestone.project_id) === String(projectId),
       )
-      .single();
-
-    if (taskError) {
-      setError(taskError.message);
-      setSaving(false);
+    ) {
+      setError("Tahapan yang dipilih tidak sesuai dengan proyek.");
       return;
     }
 
-    // ACTIVITY LOG
-    const { error: logError } = await createActivityLog({
-      action: "CREATE_TASK",
-      description: `Membuat task "${task.title}"`,
-      projectId: task.project_id,
-      metadata: {
-        task_id: task.id,
-        title: task.title,
-        assigned_to: task.assigned_to,
-        status: task.status,
-        priority: task.priority,
-        deadline: task.deadline,
-        client_visible: task.client_visible,
-      },
-    });
-
-    if (logError) {
-      console.error("Activity log error:", logError);
+    // VALIDASI PENANGGUNG JAWAB
+    // PM wajib memilih dirinya sendiri atau Staff agar sesuai dengan kebijakan RLS.
+    if (userRole === "Project Manager" && !assignedTo) {
+      setError("Project Manager wajib memilih penanggung jawab tugas.");
+      return;
     }
 
-    router.push("/dashboard/tasks");
-    router.refresh();
-  }
+    if (assignedTo) {
+      const selectedUser = assignees.find((user) => user.id === assignedTo);
 
-  // LOADING STATE
-  if (loading) {
-    return (
-      <main className="min-h-screen bg-[#111111] px-5 py-6 text-white sm:px-7 lg:px-8">
-        <header className="mb-8 mt-2">
-          <BackLink />
+      const isValidAssignee =
+        selectedUser?.role === "Staff" ||
+        (userRole === "Admin" && selectedUser?.role === "Project Manager") ||
+        (userRole === "Project Manager" &&
+          selectedUser?.id === currentUserId &&
+          selectedUser?.role === "Project Manager");
 
-          <h1 className={TEXT.pageTitle}>Tambah Task</h1>
+      if (!isValidAssignee) {
+        setError(
+          "Penanggung jawab harus merupakan Project Manager proyek atau Staff yang terdaftar sebagai anggota proyek ini.",
+        );
+        return;
+      }
+    }
 
-          <p className={TEXT.subtitle}>Tambahkan pekerjaan baru ke proyek.</p>
-        </header>
+    setSaving(true);
 
-        <div className={formClass}>
-          <p className="text-sm text-zinc-400">Memuat data...</p>
-        </div>
-      </main>
-    );
+    try {
+      const { data: task, error: taskError } = await supabase
+        .from("tasks")
+        .insert({
+          project_id: projectId,
+          milestone_id: milestoneId || null,
+          title: title.trim(),
+          description: description.trim() || null,
+          assigned_to: assignedTo || null,
+          priority,
+          status,
+          deadline: deadline || null,
+          client_visible: clientVisible,
+        })
+        .select(
+          `
+          id,
+          project_id,
+          title,
+          assigned_to,
+          status,
+          priority,
+          deadline,
+          client_visible
+        `,
+        )
+        .single();
+
+      if (taskError) {
+        setError(`Tugas gagal disimpan: ${taskError.message}`);
+        return;
+      }
+
+      if (!task) {
+        setError("Tugas belum berhasil disimpan. Silakan coba lagi.");
+        return;
+      }
+
+      // ACTIVITY LOG
+      // Kegagalan activity log tidak membatalkan penyimpanan tugas.
+      try {
+        const { error: logError } = await createActivityLog({
+          action: "CREATE_TASK",
+          description: `Membuat tugas "${task.title}"`,
+          projectId: task.project_id,
+          metadata: {
+            task_id: task.id,
+            title: task.title,
+            assigned_to: task.assigned_to,
+            status: task.status,
+            priority: task.priority,
+            deadline: task.deadline,
+            client_visible: task.client_visible,
+          },
+        });
+
+        if (logError) {
+          console.error("Activity log error:", logError);
+        }
+      } catch (logError) {
+        console.error("Activity log exception:", logError);
+      }
+
+      window.location.assign(
+        `/dashboard/tasks?success=created&expanded=${encodeURIComponent(projectId)}`,
+      );
+    } catch (submitError) {
+      console.error("Create task error:", submitError);
+
+      setError(
+        submitError instanceof Error
+          ? `Terjadi kesalahan: ${submitError.message}`
+          : "Terjadi kesalahan saat menyimpan tugas. Silakan coba lagi.",
+      );
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
-    <main className="min-h-screen bg-[#111111] px-5 py-6 text-white sm:px-7 lg:px-8">
-      {/* HEADER */}
-      <header className="mb-8 mt-2">
-        <BackLink />
+    <main className="min-h-screen bg-[#f7f7f5] px-5 py-6 text-[#1f1e30] sm:px-7 lg:px-8">
+      <BackLink />
 
-        <h1 className={TEXT.pageTitle}>Tambah Task</h1>
-
-        <p className={TEXT.subtitle}>
-          Tambahkan pekerjaan baru ke proyek dan tentukan informasi
-          pengerjaannya.
-        </p>
-      </header>
-
-      {/* ERROR */}
       {error && (
         <div
           role="alert"
-          className="mb-6 max-w-4xl rounded-xl border border-red-500/20 bg-red-500/[0.06] px-4 py-3 text-sm text-red-400"
+          className="mb-6 max-w-5xl rounded-xl border border-red-200 bg-white px-4 py-3 text-sm text-red-600"
         >
           {error}
         </div>
       )}
 
-      {/* FORM */}
       <form onSubmit={handleSubmit} className={formClass}>
-        {/* PROJECT */}
+        {/* PROYEK */}
         <div className={fieldClass}>
           <label htmlFor="project" className={TEXT.label}>
             Proyek <span className="text-red-500">*</span>
@@ -365,10 +535,13 @@ export default function NewTaskPage() {
           <CustomSelect
             id="project"
             value={projectId}
-            onChange={(e) => setProjectId(e.target.value)}
+            onChange={(e) => handleProjectChange(e.target.value)}
             required
+            disabled={loading || saving}
           >
-            <option value="">Pilih proyek</option>
+            <option value="" disabled hidden>
+              Pilih proyek
+            </option>
 
             {projects.map((project) => (
               <option key={project.id} value={project.id}>
@@ -378,14 +551,14 @@ export default function NewTaskPage() {
           </CustomSelect>
 
           {projects.length === 0 && (
-            <p className="text-xs leading-5 text-zinc-500">
-              Belum ada proyek. Tambahkan proyek terlebih dahulu sebelum membuat
-              task.
+            <p className="text-xs leading-5 text-[#777777]">
+              Belum ada proyek aktif. Tambahkan proyek terlebih dahulu sebelum
+              membuat tugas.
             </p>
           )}
         </div>
 
-        {/* MILESTONE */}
+        {/* TAHAPAN PROYEK */}
         <div className={fieldClass}>
           <label htmlFor="milestone" className={TEXT.label}>
             Milestone
@@ -395,16 +568,22 @@ export default function NewTaskPage() {
             id="milestone"
             value={milestoneId}
             onChange={(e) => setMilestoneId(e.target.value)}
-            disabled={!projectId || loadingMilestones}
+            disabled={!projectId || loadingMilestones || saving}
           >
-            <option value="">
+            <option
+              value=""
+              disabled
+              hidden={Boolean(
+                projectId && !loadingMilestones && milestones.length > 0,
+              )}
+            >
               {!projectId
                 ? "Pilih proyek terlebih dahulu"
                 : loadingMilestones
-                  ? "Memuat milestone..."
+                  ? "Memuat milestone proyek..."
                   : milestones.length === 0
-                    ? "Belum ada milestone"
-                    : "Pilih milestone"}
+                    ? "Belum ada milestone proyek"
+                    : "Pilih milestone proyek"}
             </option>
 
             {milestones.map((milestone) => (
@@ -415,16 +594,16 @@ export default function NewTaskPage() {
           </CustomSelect>
 
           {projectId && !loadingMilestones && milestones.length === 0 && (
-            <p className="text-xs leading-5 text-zinc-500">
-              Belum ada milestone untuk proyek ini.
+            <p className="text-xs leading-5 text-[#777777]">
+              Belum ada tahapan proyek untuk proyek ini.
             </p>
           )}
         </div>
 
-        {/* TITLE */}
+        {/* NAMA TUGAS */}
         <div className={fieldClass}>
           <label htmlFor="title" className={TEXT.label}>
-            Nama Task <span className="text-red-500">*</span>
+            Nama Tugas <span className="text-red-500">*</span>
           </label>
 
           <input
@@ -432,16 +611,17 @@ export default function NewTaskPage() {
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="Contoh: Mengembangkan halaman utama"
+            placeholder="Masukkan nama tugas"
             className={TEXT.input}
             required
+            disabled={saving}
           />
         </div>
 
-        {/* DESCRIPTION */}
+        {/* DESKRIPSI */}
         <div className={fieldClass}>
           <label htmlFor="description" className={TEXT.label}>
-            Deskripsi Task
+            Deskripsi Tugas
           </label>
 
           <textarea
@@ -449,33 +629,52 @@ export default function NewTaskPage() {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={4}
-            placeholder="Jelaskan pekerjaan yang perlu dilakukan..."
+            placeholder="Tambahkan deskripsi tugas"
             className={TEXT.textarea}
+            disabled={saving}
           />
         </div>
 
-        {/* ASSIGNED TO */}
+        {/* PENANGGUNG JAWAB */}
         <div className={fieldClass}>
           <label htmlFor="assignedTo" className={TEXT.label}>
-            Penanggung Jawab (PIC)
+            Penanggung Jawab
           </label>
 
           <CustomSelect
             id="assignedTo"
             value={assignedTo}
             onChange={(e) => setAssignedTo(e.target.value)}
+            disabled={loading || loadingAssignees || !projectId || saving}
           >
-            <option value="">Pilih penanggung jawab</option>
+            <option value="" disabled hidden>
+              {!projectId
+                ? "Pilih proyek terlebih dahulu"
+                : loadingAssignees
+                  ? "Memuat anggota proyek..."
+                  : assignees.length === 0
+                    ? "Belum ada anggota proyek"
+                    : "Pilih penanggung jawab"}
+            </option>
 
-            {users.map((user) => (
+            {assignees.map((user) => (
               <option key={user.id} value={user.id}>
-                {user.name} — {user.role}
+                {user.name}
+                {user.id === currentUserId && user.role === "Project Manager"
+                  ? " — Saya (Project Manager)"
+                  : ` — ${user.role}`}
               </option>
             ))}
           </CustomSelect>
+
+          {projectId && !loadingAssignees && assignees.length === 0 && (
+            <p className="text-xs leading-5 text-[#777777]">
+              Belum ada Project Manager atau Staff yang terdaftar sebagai anggota proyek ini.
+            </p>
+          )}
         </div>
 
-        {/* PRIORITY & STATUS */}
+        {/* PRIORITAS DAN STATUS */}
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
           <div className={fieldClass}>
             <label htmlFor="priority" className={TEXT.label}>
@@ -486,7 +685,12 @@ export default function NewTaskPage() {
               id="priority"
               value={priority}
               onChange={(e) => setPriority(e.target.value)}
+              required
+              disabled={saving}
             >
+              <option value="" disabled hidden>
+                Pilih prioritas
+              </option>
               <option value="Low">Rendah</option>
               <option value="Medium">Sedang</option>
               <option value="High">Tinggi</option>
@@ -495,22 +699,28 @@ export default function NewTaskPage() {
 
           <div className={fieldClass}>
             <label htmlFor="status" className={TEXT.label}>
-              Status Task
+              Status Tugas
             </label>
 
             <CustomSelect
               id="status"
               value={status}
               onChange={(e) => setStatus(e.target.value)}
+              required
+              disabled={saving}
             >
-              <option value="Pending">Pending</option>
-              <option value="In Progress">Dalam Proses</option>
+              <option value="" disabled hidden>
+                Pilih status tugas
+              </option>
+              <option value="Pending">Belum Dimulai</option>
+              <option value="In Progress">Berjalan</option>
+              <option value="Ditunda">Ditunda</option>
               <option value="Completed">Selesai</option>
             </CustomSelect>
           </div>
         </div>
 
-        {/* DEADLINE */}
+        {/* TENGGAT WAKTU */}
         <div className={fieldClass}>
           <label htmlFor="deadline" className={TEXT.label}>
             Tenggat Waktu
@@ -521,36 +731,44 @@ export default function NewTaskPage() {
             type="date"
             value={deadline}
             onChange={(e) => setDeadline(e.target.value)}
+            onClick={(e) => {
+              const input = e.currentTarget;
+
+              if (typeof input.showPicker === "function") {
+                input.showPicker();
+              }
+            }}
             disabled={saving}
-            className={`${TEXT.input} pr-11 [color-scheme:dark]`}
+            className={`${TEXT.input} !pr-4 cursor-pointer [color-scheme:light]`}
           />
         </div>
 
-        {/* CLIENT VISIBILITY */}
-        <div className="flex items-start gap-3 rounded-xl border border-[#2a2a2a] bg-[#111111]/70 p-4">
+        {/* VISIBILITAS KLIEN */}
+        <div className="flex items-start gap-3 rounded-xl border border-[#EEEEEE] bg-[#f7f7f5] p-4">
           <input
             id="clientVisible"
             type="checkbox"
             checked={clientVisible}
             onChange={(e) => setClientVisible(e.target.checked)}
+            disabled={saving}
             className="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-[#B7FE1A]"
           />
 
           <div>
             <label
               htmlFor="clientVisible"
-              className="cursor-pointer text-sm font-medium text-white"
+              className="cursor-pointer text-sm font-medium text-[#1f1e30]"
             >
               Tampilkan kepada klien
             </label>
 
-            <p className="mt-1 text-sm leading-6 text-zinc-400">
-              Task ini dapat dilihat klien melalui halaman proyek publik.
+            <p className="mt-1 text-sm leading-6 text-[#777777]">
+              Tugas ini dapat dilihat klien melalui halaman proyek publik.
             </p>
           </div>
         </div>
 
-        {/* BUTTONS */}
+        {/* TOMBOL */}
         <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
           <button
             type="button"
@@ -563,17 +781,16 @@ export default function NewTaskPage() {
 
           <button
             type="submit"
-            disabled={saving || projects.length === 0}
+            disabled={
+              loading ||
+              saving ||
+              projects.length === 0 ||
+              loadingMilestones ||
+              loadingAssignees
+            }
             className={TEXT.primaryButton}
           >
-            {saving ? (
-              <>
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-black/30 border-t-black" />
-                Menyimpan...
-              </>
-            ) : (
-              "Simpan Task"
-            )}
+            {saving ? "Menyimpan..." : "Tambah"}
           </button>
         </div>
       </form>

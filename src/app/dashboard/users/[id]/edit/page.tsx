@@ -16,29 +16,31 @@ type User = {
 const ROLES = ["Admin", "Project Manager", "Staff"];
 
 const TEXT = {
-  pageTitle: "text-3xl font-semibold tracking-tight text-white",
-  subtitle: "mt-1 text-sm text-zinc-400",
-  label: "text-sm font-medium text-white",
+  label: "block text-sm font-medium text-[#1f1e30]",
   input:
-    "h-[54px] w-full rounded-xl border border-[#2a2a2a] bg-[#1c1c1c] px-4 text-sm text-white outline-none transition-colors focus:border-[#B7FE1A] disabled:cursor-not-allowed disabled:opacity-50",
+    "h-[54px] w-full rounded-xl border border-[#EEEEEE] bg-white px-4 text-sm text-[#1f1e30] outline-none transition-colors focus:!border-[#1f1e30] focus:outline-none focus:ring-0 disabled:cursor-not-allowed disabled:opacity-50",
   primaryButton:
-    "inline-flex items-center justify-center gap-2 rounded-xl bg-[#B7FE1A] px-5 py-3 text-sm font-semibold text-black transition-colors hover:bg-[#caff57] disabled:cursor-not-allowed disabled:opacity-50",
+    "inline-flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#B7FE1A] px-4 text-sm font-medium text-[#1f1e30] transition-colors hover:bg-[#a8ed12] disabled:cursor-not-allowed disabled:opacity-50 sm:w-[130px]",
+
   secondaryButton:
-    "inline-flex items-center justify-center rounded-xl px-5 py-3 text-sm font-medium text-zinc-400 transition-colors hover:bg-white/[0.05] hover:text-white disabled:cursor-not-allowed disabled:opacity-50",
+    "inline-flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#1f1e30] px-4 text-sm font-normal text-white transition-colors hover:bg-[#333247] disabled:cursor-not-allowed disabled:opacity-50 sm:w-[130px]",
 };
 
 const fieldClass = "flex flex-col gap-2";
 
+const formClass =
+  "flex max-w-5xl flex-col gap-6 rounded-2xl border border-[#EEEEEE] bg-white p-5 shadow-[0_2px_10px_rgba(31,30,48,0.04)] sm:p-8";
+
 function getRoleStyle(role: string | null) {
   switch (role) {
     case "Admin":
-      return "border-[#FDA4AF]/20 bg-[#5C2028] text-[#FDA4AF]";
+      return "bg-[#fce2d3]";
     case "Project Manager":
-      return "border-[#7DD3FC]/20 bg-[#123D56] text-[#7DD3FC]";
+      return "bg-[#DCE8F2]";
     case "Staff":
-      return "border-[#6EE7B7]/20 bg-[#075C3C] text-[#6EE7B7]";
+      return "bg-[#D5EDE8]";
     default:
-      return "border-[#333333] bg-[#262626] text-zinc-400";
+      return "bg-[#F5F5F4]";
   }
 }
 
@@ -188,22 +190,27 @@ export default function EditUserPage() {
       }
 
       // Mencatat aktivitas perubahan role
-      const { error: logError } = await createActivityLog({
-        action: "UPDATE_USER_ROLE",
-        description:
-          `Mengubah role user "${updatedUser.name || updatedUser.email}" ` +
-          `dari "${oldRole}" menjadi "${updatedUser.role}"`,
-        metadata: {
-          user_id: updatedUser.id,
-          user_name: updatedUser.name,
-          user_email: updatedUser.email,
-          old_role: oldRole,
-          new_role: updatedUser.role,
-        },
-      });
+      // Kegagalan activity log tidak membatalkan perubahan role yang sudah berhasil.
+      try {
+        const { error: logError } = await createActivityLog({
+          action: "UPDATE_USER_ROLE",
+          description:
+            `Mengubah role user "${updatedUser.name || updatedUser.email}" ` +
+            `dari "${oldRole}" menjadi "${updatedUser.role}"`,
+          metadata: {
+            user_id: updatedUser.id,
+            user_name: updatedUser.name,
+            user_email: updatedUser.email,
+            old_role: oldRole,
+            new_role: updatedUser.role,
+          },
+        });
 
-      if (logError) {
-        console.error("Activity log error:", logError);
+        if (logError) {
+          console.error("Activity log error:", logError);
+        }
+      } catch (logErr) {
+        console.error("Activity log exception:", logErr);
       }
 
       router.push("/dashboard/users");
@@ -219,10 +226,10 @@ export default function EditUserPage() {
   // Tampilan loading
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#111111] px-5 text-white">
+      <main className="flex min-h-screen items-center justify-center bg-[#f7f7f5] px-5 text-[#1f1e30]">
         <div className="flex flex-col items-center gap-3">
-          <div className="h-7 w-7 animate-spin rounded-full border-2 border-[#333333] border-t-[#B7FE1A]" />
-          <p className="text-sm text-zinc-400">Memuat data pengguna...</p>
+          <div className="h-7 w-7 animate-spin rounded-full border-2 border-[#1f1e30]/30 border-t-[#1f1e30]" />
+          <p className="text-sm text-[#777777]">Memuat data pengguna...</p>
         </div>
       </main>
     );
@@ -231,25 +238,20 @@ export default function EditUserPage() {
   // Tampilan error
   if (error && !user) {
     return (
-      <main className="min-h-screen bg-[#111111] px-5 py-6 text-white sm:px-7 lg:px-8">
-        <div className="mb-8 mt-2">
+      <main className="min-h-screen bg-[#f7f7f5] px-5 py-6 text-[#1f1e30] sm:px-7 lg:px-8">
+        <div className="mb-6">
           <Link
             href="/dashboard/users"
-            className="inline-flex items-center gap-2 text-sm text-zinc-400 transition-colors hover:text-[#B7FE1A]"
+            className="inline-flex items-center gap-2 text-sm font-semibold text-[#65A30D] transition-colors hover:text-[#4D7C0F]"
           >
             <ArrowLeftIcon />
             Kembali
           </Link>
-
-          <div className="mt-5">
-            <h1 className={TEXT.pageTitle}>Edit User Role</h1>
-            <p className={TEXT.subtitle}>Kelola role dan hak akses pengguna.</p>
-          </div>
         </div>
 
         <div
           role="alert"
-          className="flex max-w-4xl items-start gap-3 rounded-xl border border-red-500/20 bg-red-500/[0.06] px-5 py-4 text-sm text-red-400"
+          className="flex max-w-5xl items-start gap-3 rounded-xl border border-red-200 bg-[#fce2d3] px-5 py-4 text-sm text-red-700"
         >
           <AlertIcon />
           <p>{error}</p>
@@ -260,9 +262,9 @@ export default function EditUserPage() {
 
   if (!user) {
     return (
-      <main className="min-h-screen bg-[#111111] px-5 py-6 text-white sm:px-7 lg:px-8">
-        <div className="max-w-4xl rounded-xl border border-[#2a2a2a] bg-[#1c1c1c]/80 p-5">
-          <p className="text-sm text-zinc-400">
+      <main className="min-h-screen bg-[#f7f7f5] px-5 py-6 text-[#1f1e30] sm:px-7 lg:px-8">
+        <div className="max-w-5xl rounded-2xl border border-[#EEEEEE] bg-white p-5 shadow-[0_2px_10px_rgba(31,30,48,0.04)]">
+          <p className="text-sm text-[#777777]">
             Data pengguna tidak ditemukan.
           </p>
           <Link
@@ -277,30 +279,23 @@ export default function EditUserPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#111111] px-5 py-6 text-white sm:px-7 lg:px-8">
-      {/* Header */}
-      <div className="mb-8 mt-2">
+    <main className="min-h-screen bg-[#f7f7f5] px-5 py-6 text-[#1f1e30] sm:px-7 lg:px-8">
+      {/* Kembali */}
+      <div className="mb-6">
         <Link
           href="/dashboard/users"
-          className="inline-flex items-center gap-2 text-sm text-zinc-400 transition-colors hover:text-[#B7FE1A]"
+          className="inline-flex items-center gap-2 text-sm font-semibold text-[#65A30D] transition-colors hover:text-[#4D7C0F]"
         >
           <ArrowLeftIcon />
           Kembali
         </Link>
-
-        <div className="mt-5">
-          <h1 className={TEXT.pageTitle}>Edit User Role</h1>
-          <p className={TEXT.subtitle}>
-            Kelola role dan hak akses pengguna yang terdaftar di sistem.
-          </p>
-        </div>
       </div>
 
       {/* Pesan Kesalahan */}
       {error && (
         <div
           role="alert"
-          className="mb-6 flex max-w-4xl items-start gap-3 rounded-xl border border-red-500/20 bg-red-500/[0.06] px-5 py-4 text-sm text-red-400"
+          className="mb-6 flex max-w-5xl items-start gap-3 rounded-xl border border-red-200 bg-[#fce2d3] px-5 py-4 text-sm text-red-700"
         >
           <AlertIcon />
           <p>{error}</p>
@@ -308,31 +303,28 @@ export default function EditUserPage() {
       )}
 
       {/* Form Edit Pengguna */}
-      <form
-        onSubmit={handleSubmit}
-        className="flex max-w-4xl flex-col gap-6 rounded-[22px] border border-[#2a2a2a] bg-[#1c1c1c]/80 p-5 sm:p-8"
-      >
+      <form onSubmit={handleSubmit} className={formClass}>
         {/* Informasi Pengguna */}
-        <div className="flex items-center gap-4 rounded-xl border border-[#2a2a2a] bg-[#171717] p-5">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-[#B7FE1A]/20 bg-[#B7FE1A]/10">
+        <div className="flex items-center gap-4 rounded-xl border border-[#EEEEEE] bg-[#fafaf9] p-5">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#1f1e30]">
             <span className="text-lg font-semibold text-[#B7FE1A]">
               {(user.name || user.email || "U").charAt(0).toUpperCase()}
             </span>
           </div>
 
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold text-white">
+            <p className="truncate text-sm font-semibold text-[#1f1e30]">
               {user.name || "Unnamed User"}
             </p>
 
-            <p className="mt-1 truncate text-sm text-[#A5BDCC]">
+            <p className="mt-1 truncate text-sm text-[#777777]">
               {user.email || "-"}
             </p>
 
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              <span className="text-xs text-zinc-500">Role saat ini:</span>
+              <span className="text-xs text-[#777777]">Role saat ini:</span>
               <span
-                className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${getRoleStyle(user.role)}`}
+                className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium text-[#1f1e30] ${getRoleStyle(user.role)}`}
               >
                 {user.role || "Unknown"}
               </span>
@@ -356,14 +348,14 @@ export default function EditUserPage() {
               disabled={saving}
             >
               {ROLES.map((item) => (
-                <option key={item} value={item} className="bg-[#1c1c1c]">
+                <option key={item} value={item}>
                   {item}
                 </option>
               ))}
             </select>
 
             <svg
-              className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500"
+              className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[#777777]"
               width="16"
               height="16"
               viewBox="0 0 24 24"
@@ -378,39 +370,20 @@ export default function EditUserPage() {
             </svg>
           </div>
 
-          <p className="text-xs leading-5 text-zinc-500">
+          <p className="text-xs leading-5 text-[#777777]">
             Role menentukan hak akses pengguna terhadap fitur di dalam sistem.
           </p>
         </div>
 
-        {/* Deskripsi Role */}
-        <div className="rounded-xl border border-[#2a2a2a] bg-[#171717] p-5">
-          <p className="text-sm font-medium text-white">
-            {role === "Admin"
-              ? "Admin"
-              : role === "Project Manager"
-                ? "Project Manager"
-                : "Staff"}
-          </p>
-
-          <p className="mt-1 text-sm leading-6 text-zinc-400">
-            {role === "Admin"
-              ? "Memiliki akses administratif untuk mengelola pengguna dan pengaturan sistem sesuai izin yang tersedia."
-              : role === "Project Manager"
-                ? "Berperan dalam mengelola proyek, mengatur tugas, dan memantau pelaksanaan pekerjaan sesuai hak aksesnya."
-                : "Berperan dalam menjalankan tugas proyek dan memperbarui pekerjaan sesuai tanggung jawab yang diberikan."}
-          </p>
-        </div>
-
-        {/* Informasi */}
-        <div className="flex items-start gap-3 rounded-xl border border-[#B7FE1A]/15 bg-[#B7FE1A]/[0.04] p-4">
-          <div className="mt-0.5 shrink-0 text-[#B7FE1A]">
+        {/* INFORMASI PERHATIAN */}
+        <div className="flex items-start gap-3 rounded-xl border border-[#EEEEEE] bg-[#f7f7f5] p-4">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#fce2d3] text-[#1f1e30]">
             <InfoIcon />
           </div>
 
           <div>
-            <p className="text-sm font-medium text-white">Perhatian</p>
-            <p className="mt-1 text-xs leading-5 text-zinc-400">
+            <p className="text-sm font-medium text-[#1f1e30]">Perhatian</p>
+            <p className="mt-1 text-sm leading-6 text-[#777777]">
               Perubahan role akan memengaruhi hak akses pengguna. Hanya Admin
               yang dapat mengubah role dan Admin tidak dapat mengubah role
               akunnya sendiri.
@@ -419,10 +392,14 @@ export default function EditUserPage() {
         </div>
 
         {/* Tombol Aksi */}
-        <div className="flex flex-col-reverse gap-3 border-t border-[#2a2a2a] pt-6 sm:flex-row sm:justify-end">
-          <Link href="/dashboard/users" className={TEXT.secondaryButton}>
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={() => router.push("/dashboard/users")}
+            className={TEXT.secondaryButton}
+          >
             Batal
-          </Link>
+          </button>
 
           <button
             type="submit"
@@ -431,11 +408,11 @@ export default function EditUserPage() {
           >
             {saving ? (
               <>
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-black/30 border-t-black" />
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-[#1f1e30]/30 border-t-[#1f1e30]" />
                 Menyimpan...
               </>
             ) : (
-              "Simpan Perubahan"
+              "Simpan"
             )}
           </button>
         </div>

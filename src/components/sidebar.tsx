@@ -19,29 +19,36 @@ export default function Sidebar({ name, role }: SidebarProps) {
   const pathname = usePathname();
 
   const normalizedRole = role.trim().toLowerCase();
+
   const isAdmin = normalizedRole === "admin";
   const isPM = normalizedRole === "project manager";
 
+  // MENU UTAMA ADMIN, PROJECT MANAGER, DAN STAFF
   const mainMenu: MenuItem[] = [
     { label: "Dashboard", href: "/dashboard", icon: "dashboard" },
-    { label: "Klien", href: "/dashboard/clients", icon: "group" },
     { label: "Proyek", href: "/dashboard/projects", icon: "folder_open" },
-    { label: "Tugas", href: "/dashboard/tasks", icon: "task_alt" },
+    { label: "Milestones", href: "/dashboard/milestones", icon: "flag" },
+    { label: "Tugas", href: "/dashboard/tasks", icon: "task" },
     {
-      label: "Tahapan Proyek",
-      href: "/dashboard/milestones",
-      icon: "flag",
-    },
-    {
-      label: "Pembaruan Proyek",
+      label: "Update Proyek",
       href: "/dashboard/updates",
-      icon: "update",
+      icon: "edit_note",
     },
-    { label: "Berkas", href: "/dashboard/files", icon: "folder" },
+    { label: "File", href: "/dashboard/files", icon: "folder" },
   ];
 
+  // MENU KHUSUS ADMIN
+  const adminClientMenu: MenuItem[] = [
+    { label: "Klien", href: "/dashboard/clients", icon: "business" },
+  ];
+
+  // MENU KHUSUS ADMIN
   const adminMenu: MenuItem[] = [
-    { label: "Pengguna", href: "/dashboard/users", icon: "manage_accounts" },
+    { label: "Pengguna", href: "/dashboard/users", icon: "group" },
+  ];
+
+  // MENU ADMIN DAN PROJECT MANAGER
+  const activityMenu: MenuItem[] = [
     {
       label: "Log Aktivitas",
       href: "/dashboard/activity-logs",
@@ -49,16 +56,16 @@ export default function Sidebar({ name, role }: SidebarProps) {
     },
   ];
 
-  const visibleMainMenu = mainMenu.filter((item) => {
-    if (
-      item.href === "/dashboard/clients" ||
-      item.href === "/dashboard/milestones"
-    ) {
-      return isAdmin || isPM;
-    }
-
-    return true;
-  });
+  // MENENTUKAN MENU YANG DITAMPILKAN
+  const visibleMenu: MenuItem[] = [
+    mainMenu[0], // Dashboard
+    ...(isAdmin ? adminClientMenu : []), // Klien khusus Admin
+    ...mainMenu
+      .slice(1)
+      .filter((item) => item.href !== "/dashboard/updates" || isAdmin || isPM), // Update Proyek khusus Admin dan PM
+    ...(isAdmin ? adminMenu : []), // Pengguna
+    ...(isAdmin || isPM ? activityMenu : []), // Log Aktivitas
+  ];
 
   function isActive(href: string) {
     if (href === "/dashboard") {
@@ -76,18 +83,16 @@ export default function Sidebar({ name, role }: SidebarProps) {
         key={item.href}
         href={item.href}
         aria-current={active ? "page" : undefined}
-        className={`group flex min-h-[42px] items-center gap-3 rounded-lg px-3.5 py-2 text-[13px] transition-colors duration-200 ${
+        className={`group flex min-h-[40px] items-center gap-3 rounded-full px-3.5 py-2 text-[13px] transition-colors duration-200 ${
           active
             ? "bg-[#B7FE1A] font-semibold text-[#111800]"
-            : "text-[#A5BDCC] hover:bg-white/[0.04] hover:text-[#B7FE1A]"
+            : "text-[#E2E0EC] hover:bg-white/[0.07] hover:text-white"
         }`}
       >
         <SidebarIcon
           name={item.icon}
-          className={`h-[20px] w-[20px] shrink-0 ${
-            active
-              ? "text-[#111800]"
-              : "text-[#A5BDCC] group-hover:text-[#B7FE1A]"
+          className={`h-[18px] w-[18px] shrink-0 ${
+            active ? "text-[#111800]" : "text-[#B9B6C9] group-hover:text-white"
           }`}
         />
 
@@ -97,47 +102,36 @@ export default function Sidebar({ name, role }: SidebarProps) {
   }
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-40 flex h-dvh w-64 flex-col overflow-hidden border-r border-[#262626] bg-[#111111] text-white">
+    <aside className="fixed inset-y-4 left-4 z-40 flex h-[calc(100dvh-32px)] w-60 flex-col overflow-hidden rounded-[22px] bg-[#1f1e30] text-white shadow-[0_8px_30px_rgba(0,0,0,0.08)]">
       {/* LOGO */}
       <div className="flex h-[76px] shrink-0 items-center justify-center px-5">
         <Link
           href="/dashboard"
           aria-label="Dashboard Enika"
-          className="flex items-center justify-center"
+          className="flex -translate-x-1 items-center justify-center"
         >
           <img
-            src="/images/enika%20logo.png"
+            src="/images/enika%20logo%20putih.png"
             alt="Enika"
             className="block h-auto w-[108px] object-contain"
           />
         </Link>
       </div>
 
-      {/* MENU NAVIGASI */}
+      {/* NAVIGATION MENU */}
       <nav
-        aria-label="Navigasi utama"
-        className="sidebar-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-3 py-3"
+        aria-label="Main navigation"
+        className="sidebar-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-3 py-2"
       >
-        <div className="space-y-1">{visibleMainMenu.map(renderMenuItem)}</div>
-
-        {/* MENU ADMINISTRASI */}
-        {isAdmin && (
-          <div className="mt-7">
-            <p className="mb-2.5 px-3.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#A5BDCC]/70">
-              Administrasi
-            </p>
-
-            <div className="space-y-1">{adminMenu.map(renderMenuItem)}</div>
-          </div>
-        )}
+        <div className="space-y-1">{visibleMenu.map(renderMenuItem)}</div>
       </nav>
 
       {/* LOGOUT */}
-      <div className="shrink-0 bg-[#111111] p-3">
+      <div className="shrink-0 p-3">
         <LogoutButton />
       </div>
 
-      {/* SCROLLBAR MINIMALIS */}
+      {/* MINIMAL SCROLLBAR */}
       <style jsx global>{`
         .sidebar-scrollbar {
           scrollbar-width: thin;
@@ -145,7 +139,7 @@ export default function Sidebar({ name, role }: SidebarProps) {
         }
 
         .sidebar-scrollbar:hover {
-          scrollbar-color: #2a2a2a transparent;
+          scrollbar-color: #393747 transparent;
         }
 
         .sidebar-scrollbar::-webkit-scrollbar {
@@ -162,7 +156,7 @@ export default function Sidebar({ name, role }: SidebarProps) {
         }
 
         .sidebar-scrollbar:hover::-webkit-scrollbar-thumb {
-          background: #2a2a2a;
+          background: #393747;
         }
       `}</style>
     </aside>
@@ -181,7 +175,7 @@ function SidebarIcon({
       className={`material-symbols-outlined ${className}`}
       aria-hidden="true"
       style={{
-        fontSize: "20px",
+        fontSize: "18px",
         fontWeight: 400,
         fontStyle: "normal",
         lineHeight: 1,

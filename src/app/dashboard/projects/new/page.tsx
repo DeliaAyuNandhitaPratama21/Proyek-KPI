@@ -1,6 +1,7 @@
+
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useState, SelectHTMLAttributes } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "../../../../lib/supabase/client";
@@ -17,42 +18,35 @@ type User = {
 };
 
 type ProjectStatus = {
-  id: string;
+  id: number;
   name: string;
   sort_order: number;
 };
 
 const TEXT = {
-  pageTitle: "text-3xl font-semibold tracking-tight text-white",
-  subtitle: "mt-1 text-sm text-zinc-400",
-  sectionTitle: "text-lg font-semibold text-white",
-  label: "block text-sm font-medium text-white",
-
+  label: "block text-sm font-medium text-[#1f1e30]",
   input:
-    "h-[54px] w-full rounded-xl border border-[#2a2a2a] bg-[#1c1c1c] pl-4 pr-12 text-sm text-white outline-none transition-colors placeholder:text-zinc-500 focus:border-[#B7FE1A] disabled:opacity-50",
-
+    "h-[54px] w-full rounded-xl border border-[#EEEEEE] bg-white px-4 text-sm text-[#1f1e30] outline-none transition-colors placeholder:text-[#999999] focus:border-[#1f1e30] disabled:cursor-not-allowed disabled:opacity-50",
   textarea:
-    "w-full resize-none rounded-xl border border-[#2a2a2a] bg-[#1c1c1c] px-4 py-3 text-sm leading-6 text-white outline-none transition-colors placeholder:text-zinc-500 focus:border-[#B7FE1A] disabled:opacity-50",
-
+    "w-full resize-y rounded-xl border border-[#EEEEEE] bg-white px-4 py-3 text-sm leading-6 text-[#1f1e30] outline-none transition-colors placeholder:text-[#999999] focus:border-[#1f1e30] disabled:cursor-not-allowed disabled:opacity-50",
   primaryButton:
-    "inline-flex items-center justify-center gap-2 rounded-xl bg-[#B7FE1A] px-5 py-3 text-sm font-semibold text-black transition-colors hover:bg-[#caff57] disabled:cursor-not-allowed disabled:opacity-50",
-
+    "inline-flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#B7FE1A] px-4 text-sm font-[500] text-[#1f1e30] transition-colors hover:bg-[#a8ed12] disabled:cursor-not-allowed disabled:opacity-50 sm:w-[130px]",
   secondaryButton:
-    "inline-flex items-center justify-center rounded-xl px-5 py-3 text-sm font-medium text-zinc-400 transition-colors hover:bg-white/[0.05] hover:text-white disabled:cursor-not-allowed disabled:opacity-50",
+    "inline-flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#1f1e30] px-4 text-sm font-normal text-white transition-colors hover:bg-[#333247] disabled:cursor-not-allowed disabled:opacity-50 sm:w-[130px]",
 };
 
 const fieldClass = "flex flex-col gap-2";
-
 const formClass =
-  "flex max-w-4xl flex-col gap-6 rounded-[22px] border border-[#2a2a2a] bg-[#1c1c1c]/80 p-5 sm:p-8";
+  "flex max-w-5xl flex-col gap-6 rounded-2xl border border-[#EEEEEE] bg-white p-5 shadow-[0_2px_10px_rgba(31,30,48,0.04)] sm:p-8";
 
-// Tombol kembali
+const dateInputClass = `${TEXT.input} !pr-4 cursor-pointer [color-scheme:light] [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-100 [&::-webkit-calendar-picker-indicator]:brightness-0`;
+
 function BackLink() {
   return (
-    <div className="mb-5">
+    <div className="mb-6">
       <Link
         href="/dashboard/projects"
-        className="inline-flex items-center gap-2 text-sm text-zinc-400 transition-colors hover:text-[#B7FE1A]"
+        className="inline-flex cursor-pointer items-center gap-2 text-sm font-semibold text-[#65A30D] transition-colors hover:text-[#4D7C0F]"
       >
         <svg
           width="18"
@@ -73,11 +67,10 @@ function BackLink() {
   );
 }
 
-// Ikon panah dropdown
 function SelectArrow() {
   return (
     <svg
-      className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white"
+      className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#777777]"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -91,12 +84,11 @@ function SelectArrow() {
   );
 }
 
-// Komponen dropdown dengan ikon panah khusus
 function CustomSelect({
   children,
   className,
   ...props
-}: React.SelectHTMLAttributes<HTMLSelectElement>) {
+}: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <div className="relative w-full">
       <select
@@ -105,7 +97,6 @@ function CustomSelect({
       >
         {children}
       </select>
-
       <SelectArrow />
     </div>
   );
@@ -113,171 +104,259 @@ function CustomSelect({
 
 export default function NewProjectPage() {
   const router = useRouter();
-  const supabase = createClient();
+  const [supabase] = useState(() => createClient());
 
   const [clients, setClients] = useState<Client[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
+  const [projectManagers, setProjectManagers] = useState<User[]>([]);
+  const [staffUsers, setStaffUsers] = useState<User[]>([]);
   const [statuses, setStatuses] = useState<ProjectStatus[]>([]);
+
+  const [currentUserId, setCurrentUserId] = useState("");
+  const [currentUserName, setCurrentUserName] = useState("");
+  const [userRole, setUserRole] = useState("");
 
   const [clientId, setClientId] = useState("");
   const [projectName, setProjectName] = useState("");
-  const [projectType, setProjectType] = useState("Website");
+  const [projectType, setProjectType] = useState("");
   const [description, setDescription] = useState("");
-  const [pic, setPic] = useState("");
+  const [picId, setPicId] = useState("");
+  const [selectedStaffIds, setSelectedStaffIds] = useState<string[]>([]);
   const [startDate, setStartDate] = useState("");
   const [deadline, setDeadline] = useState("");
   const [statusId, setStatusId] = useState("");
-  const [progress, setProgress] = useState(0);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
+    let cancelled = false;
+
     async function loadData() {
-      const [clientsResult, usersResult, statusesResult] = await Promise.all([
-        supabase
-          .from("clients")
-          .select("id, company_name")
-          .eq("status", "Active")
-          .order("company_name"),
+      setLoading(true);
+      setError("");
 
-        supabase.from("users").select("id, name, role").order("name"),
+      try {
+        const {
+          data: { user },
+          error: authError,
+        } = await supabase.auth.getUser();
 
-        supabase
-          .from("project_statuses")
-          .select("id, name, sort_order")
-          .order("sort_order"),
-      ]);
+        if (authError) throw new Error(authError.message);
 
-      if (clientsResult.error) {
-        setError(clientsResult.error.message);
-        setLoading(false);
-        return;
+        if (!user) {
+          router.replace("/login");
+          return;
+        }
+
+        const { data: profile, error: profileError } = await supabase
+          .from("users")
+          .select("id, name, role")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (profileError) throw new Error(profileError.message);
+
+        const role = String(profile?.role || "").trim();
+
+        if (!["Admin", "Project Manager"].includes(role)) {
+          router.replace("/dashboard");
+          return;
+        }
+
+        const [clientsResult, managersResult, staffResult, statusesResult] =
+          await Promise.all([
+            supabase
+              .from("clients")
+              .select("id, company_name")
+              .eq("status", "Active")
+              .order("company_name"),
+
+            supabase
+              .from("users")
+              .select("id, name, role")
+              .eq("role", "Project Manager")
+              .order("name"),
+
+            supabase
+              .from("users")
+              .select("id, name, role")
+              .eq("role", "Staff")
+              .order("name"),
+
+            supabase
+              .from("project_statuses")
+              .select("id, name, sort_order")
+              .order("sort_order"),
+          ]);
+
+        if (cancelled) return;
+
+        if (clientsResult.error) throw new Error(clientsResult.error.message);
+        if (managersResult.error) throw new Error(managersResult.error.message);
+        if (staffResult.error) throw new Error(staffResult.error.message);
+        if (statusesResult.error) throw new Error(statusesResult.error.message);
+
+        const loadedStatuses = (statusesResult.data || []) as ProjectStatus[];
+
+        setCurrentUserId(user.id);
+        setCurrentUserName(profile?.name || "");
+        setUserRole(role);
+
+        setClients(clientsResult.data || []);
+        setProjectManagers(managersResult.data || []);
+        setStaffUsers(staffResult.data || []);
+        setStatuses(loadedStatuses);
+
+        // Jika pembuat adalah PM, otomatis dirinya menjadi PM proyek.
+        if (role === "Project Manager") {
+          setPicId(user.id);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(
+            err instanceof Error ? err.message : "Gagal memuat data proyek.",
+          );
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-
-      if (usersResult.error) {
-        setError(usersResult.error.message);
-        setLoading(false);
-        return;
-      }
-
-      if (statusesResult.error) {
-        setError(statusesResult.error.message);
-        setLoading(false);
-        return;
-      }
-
-      setClients(clientsResult.data || []);
-      setUsers(usersResult.data || []);
-      setStatuses(statusesResult.data || []);
-
-      if (statusesResult.data && statusesResult.data.length > 0) {
-        setStatusId(statusesResult.data[0].id);
-      }
-
-      setLoading(false);
     }
 
     loadData();
-  }, []);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, router]);
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
+    if (saving) return;
+
     setSaving(true);
     setError("");
 
-    if (!clientId) {
-      setError("Silakan pilih klien.");
+    try {
+      if (!clientId) throw new Error("Silakan pilih klien.");
+      if (!projectName.trim()) throw new Error("Nama proyek wajib diisi.");
+      if (!statusId) throw new Error("Silakan pilih status proyek.");
+
+      if (!statuses.some((status) => String(status.id) === statusId)) {
+        throw new Error("Status proyek tidak valid.");
+      }
+
+      if (startDate && deadline && deadline < startDate) {
+        throw new Error("Tenggat waktu tidak boleh sebelum tanggal mulai.");
+      }
+
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError || !user) {
+        throw new Error("Sesi login tidak ditemukan. Silakan login kembali.");
+      }
+
+      // PM otomatis menjadi penanggung jawab proyeknya sendiri.
+      const finalPicId = userRole === "Project Manager" ? user.id : picId;
+
+      if (!finalPicId) {
+        throw new Error("Silakan pilih Project Manager.");
+      }
+
+      if (
+        userRole === "Admin" &&
+        !projectManagers.some((manager) => manager.id === finalPicId)
+      ) {
+        throw new Error("Project Manager yang dipilih tidak valid.");
+      }
+
+      if (
+        selectedStaffIds.some(
+          (id) => !staffUsers.some((staff) => staff.id === id),
+        )
+      ) {
+        throw new Error("Staff yang dipilih tidak valid.");
+      }
+
+      const publicToken = crypto.randomUUID().replaceAll("-", "");
+
+      const { data: newProject, error: insertError } = await supabase
+        .from("projects")
+        .insert({
+          client_id: clientId,
+          project_name: projectName.trim(),
+          project_type: projectType || null,
+          description: description.trim() || null,
+
+          // PM penanggung jawab proyek
+          pic_id: finalPicId,
+
+          // Staff pertama yang dipilih menjadi PIC Staff utama.
+          pic: selectedStaffIds[0] || null,
+
+          created_by: user.id,
+          start_date: startDate || null,
+          deadline: deadline || null,
+          status_id: Number(statusId),
+          progress: 0,
+          public_token: publicToken,
+          public_visibility: true,
+        })
+        .select("id")
+        .single();
+
+      if (insertError) throw new Error(insertError.message);
+
+      // Simpan seluruh Staff terpilih sebagai anggota proyek.
+      if (selectedStaffIds.length > 0) {
+        const members = selectedStaffIds.map((staffId) => ({
+          project_id: newProject.id,
+          user_id: staffId,
+        }));
+
+        const { error: membersError } = await supabase
+          .from("project_members")
+          .insert(members);
+
+        if (membersError) {
+          throw new Error(
+            "Proyek berhasil dibuat, tetapi anggota Staff gagal disimpan: " +
+              membersError.message,
+          );
+        }
+      }
+
+      router.push("/dashboard/projects?created=1");
+      router.refresh();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Terjadi kesalahan saat menyimpan proyek.",
+      );
       setSaving(false);
-      return;
     }
-
-    if (!projectName.trim()) {
-      setError("Nama proyek wajib diisi.");
-      setSaving(false);
-      return;
-    }
-
-    if (!statusId) {
-      setError("Silakan pilih status proyek.");
-      setSaving(false);
-      return;
-    }
-
-    const publicToken = crypto.randomUUID().replaceAll("-", "");
-
-    const { error } = await supabase.from("projects").insert({
-      client_id: clientId,
-      project_name: projectName.trim(),
-      project_type: projectType || null,
-      description: description.trim() || null,
-      pic: pic || null,
-      start_date: startDate || null,
-      deadline: deadline || null,
-      status_id: statusId,
-      progress,
-      public_token: publicToken,
-      public_visibility: true,
-    });
-
-    if (error) {
-      setError(error.message);
-      setSaving(false);
-      return;
-    }
-
-    router.push("/dashboard/projects");
-    router.refresh();
-  }
-
-  if (loading) {
-    return (
-      <main className="min-h-screen bg-[#111111] px-5 py-6 text-white sm:px-7 lg:px-8">
-        <header className="mb-8 mt-2">
-          <BackLink />
-
-          <h1 className={TEXT.pageTitle}>Tambah Proyek</h1>
-
-          <p className={TEXT.subtitle}>
-            Siapkan informasi proyek website baru.
-          </p>
-        </header>
-
-        <div className="max-w-4xl rounded-[22px] border border-[#2a2a2a] bg-[#1c1c1c]/80 p-6">
-          <p className="text-sm text-zinc-400">Memuat data...</p>
-        </div>
-      </main>
-    );
   }
 
   return (
-    <main className="min-h-screen bg-[#111111] px-5 py-6 text-white sm:px-7 lg:px-8">
-      {/* HEADER */}
-      <header className="mb-8 mt-2">
-        <BackLink />
+    <main className="min-h-screen bg-[#f7f7f5] px-5 py-6 text-[#1f1e30] sm:px-7 lg:px-8">
+      <BackLink />
 
-        <h1 className={TEXT.pageTitle}>Tambah Proyek</h1>
-
-        <p className={TEXT.subtitle}>
-          Tambahkan proyek website baru dan tentukan informasi pengerjaannya.
-        </p>
-      </header>
-
-      {/* ERROR */}
       {error && (
         <div
           role="alert"
-          className="mb-6 max-w-4xl rounded-xl border border-red-500/20 bg-red-500/[0.06] px-4 py-3 text-sm text-red-400"
+          className="mb-6 max-w-4xl rounded-xl border border-red-200 bg-white px-4 py-3 text-sm text-red-600"
         >
           {error}
         </div>
       )}
 
-      {/* FORM */}
       <form onSubmit={handleSubmit} className={formClass}>
-        {/* CLIENT */}
+        {/* KLIEN */}
         <div className={fieldClass}>
           <label htmlFor="client" className={TEXT.label}>
             Klien <span className="text-red-500">*</span>
@@ -288,9 +367,11 @@ export default function NewProjectPage() {
             value={clientId}
             onChange={(e) => setClientId(e.target.value)}
             required
+            disabled={loading || saving || clients.length === 0}
           >
-            <option value="">Pilih klien</option>
-
+            <option value="" disabled hidden>
+              Pilih klien
+            </option>
             {clients.map((client) => (
               <option key={client.id} value={client.id}>
                 {client.company_name}
@@ -299,41 +380,44 @@ export default function NewProjectPage() {
           </CustomSelect>
 
           {clients.length === 0 && (
-            <p className="text-xs leading-5 text-zinc-500">
+            <p className="text-xs leading-5 text-[#999999]">
               Belum ada klien aktif. Tambahkan atau aktifkan data klien terlebih
               dahulu.
             </p>
           )}
         </div>
 
-        {/* PROJECT NAME */}
+        {/* NAMA PROYEK */}
         <div className={fieldClass}>
           <label htmlFor="projectName" className={TEXT.label}>
             Nama Proyek <span className="text-red-500">*</span>
           </label>
-
           <input
             id="projectName"
             type="text"
             value={projectName}
             onChange={(e) => setProjectName(e.target.value)}
-            placeholder="Contoh: Website Company Profile PT Maju Jaya"
+            placeholder="Masukkan nama proyek"
             className={TEXT.input}
             required
+            disabled={saving}
           />
         </div>
 
-        {/* PROJECT TYPE */}
+        {/* JENIS PROYEK */}
         <div className={fieldClass}>
           <label htmlFor="projectType" className={TEXT.label}>
             Jenis Proyek
           </label>
-
           <CustomSelect
             id="projectType"
             value={projectType}
             onChange={(e) => setProjectType(e.target.value)}
+            disabled={saving}
           >
+            <option value="" disabled hidden>
+              Pilih jenis proyek
+            </option>
             <option value="Website">Website</option>
             <option value="Landing Page">Landing Page</option>
             <option value="E-Commerce">E-Commerce</option>
@@ -342,56 +426,122 @@ export default function NewProjectPage() {
           </CustomSelect>
         </div>
 
-        {/* DESCRIPTION */}
+        {/* DESKRIPSI */}
         <div className={fieldClass}>
           <label htmlFor="description" className={TEXT.label}>
             Deskripsi Proyek
           </label>
-
           <textarea
             id="description"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={4}
-            placeholder="Jelaskan gambaran umum proyek..."
+            placeholder="Masukkan detail proyek yang akan dikerjakan"
             className={TEXT.textarea}
+            disabled={saving}
           />
         </div>
 
-        {/* PIC */}
-        <div className={fieldClass}>
-          <label htmlFor="pic" className={TEXT.label}>
-            Penanggung Jawab (PIC)
-          </label>
+        {/* PROJECT MANAGER - hanya ditampilkan untuk Admin */}
+        {userRole === "Admin" && (
+          <div className={fieldClass}>
+            <label htmlFor="picId" className={TEXT.label}>
+              Project Manager <span className="text-red-500">*</span>
+            </label>
 
-          <CustomSelect
-            id="pic"
-            value={pic}
-            onChange={(e) => setPic(e.target.value)}
-          >
-            <option value="">Pilih penanggung jawab</option>
-
-            {users.map((user) => (
-              <option key={user.id} value={user.id}>
-                {user.name} — {user.role}
+            <CustomSelect
+              id="picId"
+              value={picId}
+              onChange={(e) => setPicId(e.target.value)}
+              required
+              disabled={loading || saving}
+            >
+              <option value="" disabled>
+                Pilih Project Manager
               </option>
-            ))}
-          </CustomSelect>
+              {projectManagers.map((manager) => (
+                <option key={manager.id} value={manager.id}>
+                  {manager.name}
+                </option>
+              ))}
+            </CustomSelect>
+          </div>
+        )}
+
+        {/* ANGGOTA STAFF */}
+        <div className={fieldClass}>
+          <label className={TEXT.label}>Anggota Staff</label>
+
+          <div className="rounded-xl border border-[#EEEEEE] bg-white p-4">
+            {staffUsers.length === 0 ? (
+              <p className="text-sm text-[#999999]">
+                Belum ada Staff yang tersedia.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {staffUsers.map((staff) => {
+                  const checked = selectedStaffIds.includes(staff.id);
+
+                  return (
+                    <label
+                      key={staff.id}
+                      className="flex cursor-pointer items-center gap-3 text-sm text-[#1f1e30]"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={loading || saving}
+                        onChange={(e) => {
+                          setSelectedStaffIds((current) =>
+                            e.target.checked
+                              ? [...current, staff.id]
+                              : current.filter((id) => id !== staff.id),
+                          );
+                        }}
+                        className="h-4 w-4 accent-[#B7FE1A]"
+                      />
+
+                      {staff.name}
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <p className="text-xs leading-5 text-[#999999]">
+            Pilih satu atau lebih Staff yang akan menjadi anggota proyek.
+            Staff pertama yang dipilih menjadi PIC Staff utama.
+          </p>
         </div>
 
-        {/* DATES */}
+        {/* TANGGAL */}
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
           <div className={fieldClass}>
             <label htmlFor="startDate" className={TEXT.label}>
               Tanggal Mulai
             </label>
-
             <input
               id="startDate"
               type="date"
               value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className={`${TEXT.input} [&::-webkit-calendar-picker-indicator]:ml-1`}
+              onClick={(e) => {
+                if (!saving && "showPicker" in e.currentTarget) {
+                  try {
+                    e.currentTarget.showPicker();
+                  } catch {
+                    // Browser akan menggunakan date picker bawaannya.
+                  }
+                }
+              }}
+              onChange={(e) => {
+                setStartDate(e.target.value);
+                if (deadline && e.target.value && deadline < e.target.value) {
+                  setDeadline("");
+                }
+              }}
+              disabled={saving}
+              className={dateInputClass}
             />
           </div>
 
@@ -399,32 +549,42 @@ export default function NewProjectPage() {
             <label htmlFor="deadline" className={TEXT.label}>
               Tenggat Waktu
             </label>
-
             <input
               id="deadline"
               type="date"
               value={deadline}
-              onChange={(e) => setDeadline(e.target.value)}
               min={startDate || undefined}
-              className={`${TEXT.input} [&::-webkit-calendar-picker-indicator]:ml-1`}
+              onClick={(e) => {
+                if (!saving && "showPicker" in e.currentTarget) {
+                  try {
+                    e.currentTarget.showPicker();
+                  } catch {
+                    // Browser akan menggunakan date picker bawaannya.
+                  }
+                }
+              }}
+              onChange={(e) => setDeadline(e.target.value)}
+              disabled={saving}
+              className={dateInputClass}
             />
           </div>
         </div>
 
-        {/* STATUS */}
+        {/* STATUS PROYEK */}
         <div className={fieldClass}>
           <label htmlFor="status" className={TEXT.label}>
             Status Proyek <span className="text-red-500">*</span>
           </label>
-
           <CustomSelect
             id="status"
             value={statusId}
             onChange={(e) => setStatusId(e.target.value)}
             required
+            disabled={loading || saving || statuses.length === 0}
           >
-            <option value="">Pilih status proyek</option>
-
+            <option value="" disabled hidden>
+              Pilih status proyek
+            </option>
             {statuses.map((status) => (
               <option key={status.id} value={status.id}>
                 {status.name}
@@ -433,41 +593,9 @@ export default function NewProjectPage() {
           </CustomSelect>
         </div>
 
-        {/* PROGRESS */}
-        <div className={fieldClass}>
-          <div className="flex items-center justify-between gap-4">
-            <label htmlFor="progress" className={TEXT.label}>
-              Progres Proyek
-            </label>
-
-            <span className="text-sm font-semibold tabular-nums text-[#B7FE1A]">
-              {progress}%
-            </span>
-          </div>
-
-          <input
-            id="progress"
-            type="range"
-            min="0"
-            max="100"
-            step="25"
-            value={progress}
-            onChange={(e) => setProgress(Number(e.target.value))}
-            className="w-full cursor-pointer accent-[#B7FE1A]"
-          />
-
-          <div className="flex justify-between text-xs text-zinc-500">
-            <span>0%</span>
-            <span>25%</span>
-            <span>50%</span>
-            <span>75%</span>
-            <span>100%</span>
-          </div>
-        </div>
-
-        {/* PUBLIC LINK INFO */}
-        <div className="flex items-start gap-3 rounded-xl border border-[#2a2a2a] bg-[#111111]/70 p-4">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#B7FE1A]/10 text-[#B7FE1A]">
+        {/* TAUTAN PEMANTAUAN KLIEN */}
+        <div className="flex items-start gap-3 rounded-xl border border-[#EEEEEE] bg-[#f7f7f5] p-4">
+          <div className="flex flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#f1ffcc] text-[#1f1e30]">
             <svg
               width="19"
               height="19"
@@ -483,22 +611,19 @@ export default function NewProjectPage() {
               <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
             </svg>
           </div>
-
           <div>
-            <p className="text-sm font-medium text-white">
+            <p className="text-sm font-medium text-[#1f1e30]">
               Tautan Pemantauan Klien
             </p>
-
-            <p className="mt-1 text-sm leading-6 text-zinc-400">
-              Tautan publik akan dibuat secara otomatis agar klien dapat
-              memantau informasi proyek. Pengaturan visibilitas dapat dikelola
-              setelah proyek dibuat.
+            <p className="mt-1 text-sm leading-6 text-[#777777]">
+              Tautan publik dibuat otomatis agar klien dapat memantau proyek.
+              Visibilitas informasi dapat diatur setelah proyek dibuat.
             </p>
           </div>
         </div>
 
-        {/* BUTTONS */}
-        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+        {/* TOMBOL AKSI */}
+        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
           <button
             type="button"
             onClick={() => router.push("/dashboard/projects")}
@@ -507,20 +632,19 @@ export default function NewProjectPage() {
           >
             Batal
           </button>
-
           <button
             type="submit"
-            disabled={saving || clients.length === 0 || statuses.length === 0}
+            disabled={
+              loading ||
+              saving ||
+              clients.length === 0 ||
+              statuses.length === 0 ||
+              !statusId ||
+              (userRole === "Admin" && !picId)
+            }
             className={TEXT.primaryButton}
           >
-            {saving ? (
-              <>
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-black/30 border-t-black" />
-                Menyimpan...
-              </>
-            ) : (
-              "Simpan Proyek"
-            )}
+            {saving ? "Menyimpan..." : "Tambah"}
           </button>
         </div>
       </form>

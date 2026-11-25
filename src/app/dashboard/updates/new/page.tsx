@@ -13,28 +13,58 @@ type Project = {
 };
 
 const TEXT = {
-  pageTitle: "text-3xl font-semibold tracking-tight text-white",
-  subtitle: "mt-1 text-sm text-zinc-400",
-  label: "block text-sm font-medium text-white",
+  label: "block text-sm font-medium text-[#1f1e30]",
+
   input:
-    "h-[54px] w-full rounded-xl border border-[#2a2a2a] bg-[#1c1c1c] px-4 text-sm text-white outline-none transition-colors placeholder:text-zinc-500 focus:border-[#B7FE1A] disabled:cursor-not-allowed disabled:opacity-50",
+    "h-[54px] w-full rounded-xl border border-[#EEEEEE] bg-white px-4 text-sm text-[#1f1e30] outline-none transition-colors placeholder:text-[#999999] focus:border-[#1f1e30] disabled:cursor-not-allowed disabled:opacity-50",
+
   textarea:
-    "w-full resize-none rounded-xl border border-[#2a2a2a] bg-[#1c1c1c] px-4 py-3 text-sm leading-6 text-white outline-none transition-colors placeholder:text-zinc-500 focus:border-[#B7FE1A] disabled:opacity-50",
+    "w-full resize-y rounded-xl border border-[#EEEEEE] bg-white px-4 py-3 text-sm leading-6 text-[#1f1e30] outline-none transition-colors placeholder:text-[#999999] focus:border-[#1f1e30] disabled:cursor-not-allowed disabled:opacity-50",
+
   primaryButton:
-    "inline-flex items-center justify-center gap-2 rounded-xl bg-[#B7FE1A] px-5 py-3 text-sm font-semibold text-black transition-colors hover:bg-[#caff57] disabled:cursor-not-allowed disabled:opacity-50",
+    "inline-flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#B7FE1A] px-4 text-sm font-medium text-[#1f1e30] transition-colors hover:bg-[#a8ed12] disabled:cursor-not-allowed disabled:opacity-50 sm:w-[130px]",
+
   secondaryButton:
-    "inline-flex items-center justify-center rounded-xl px-5 py-3 text-sm font-medium text-zinc-400 transition-colors hover:bg-white/[0.05] hover:text-white disabled:cursor-not-allowed disabled:opacity-50",
+    "inline-flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#1f1e30] px-4 text-sm font-normal text-white transition-colors hover:bg-[#333247] disabled:cursor-not-allowed disabled:opacity-50 sm:w-[130px]",
 };
 
 const fieldClass = "flex flex-col gap-2";
 
 const formClass =
-  "flex max-w-4xl flex-col gap-6 rounded-[22px] border border-[#2a2a2a] bg-[#1c1c1c]/80 p-5 sm:p-8";
+  "flex max-w-5xl flex-col gap-6 rounded-2xl border border-[#EEEEEE] bg-white p-5 shadow-[0_2px_10px_rgba(31,30,48,0.04)] sm:p-8";
 
+// TOMBOL KEMBALI
+function BackLink() {
+  return (
+    <div className="mb-6">
+      <Link
+        href="/dashboard/updates"
+        className="inline-flex cursor-pointer items-center gap-2 text-sm font-semibold text-[#65A30D] transition-colors hover:text-[#4D7C0F]"
+      >
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="m15 18-6-6 6-6" />
+        </svg>
+        Kembali
+      </Link>
+    </div>
+  );
+}
+
+// IKON PANAH DROPDOWN
 function SelectArrow() {
   return (
     <svg
-      className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white"
+      className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#777777]"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -48,6 +78,7 @@ function SelectArrow() {
   );
 }
 
+// DROPDOWN CUSTOM
 function CustomSelect({
   children,
   className,
@@ -57,7 +88,7 @@ function CustomSelect({
     <div className="relative w-full">
       <select
         {...props}
-        className={`${TEXT.input} appearance-none pr-12 ${className || ""}`}
+        className={`${TEXT.input} appearance-none ${className || ""}`}
       >
         {children}
       </select>
@@ -68,82 +99,119 @@ function CustomSelect({
 
 export default function AddProjectUpdatePage() {
   const router = useRouter();
-  const supabase = createClient();
+  const [supabase] = useState(() => createClient());
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState("");
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
-  const [clientVisible, setClientVisible] = useState(true);
+  const [clientVisible, setClientVisible] = useState(false);
 
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  // MEMUAT PROYEK DAN MEMERIKSA HAK AKSES ADMIN/PM
   useEffect(() => {
+    let cancelled = false;
+
     async function loadProjects() {
       setLoadingProjects(true);
       setError("");
 
-      // Memeriksa login pengguna
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
+      try {
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
 
-      if (userError || !user) {
-        router.push("/login");
-        return;
+        if (cancelled) return;
+
+        if (userError || !user) {
+          router.replace("/login");
+          return;
+        }
+
+        const { data: profile, error: profileError } = await supabase
+          .from("users")
+          .select("role")
+          .eq("id", user.id)
+          .single();
+
+        if (cancelled) return;
+
+        // ADMIN, PROJECT MANAGER, DAN STAFF DAPAT MEMBUAT UPDATE.
+        if (
+          profileError ||
+          !profile ||
+          !["Admin", "Project Manager"].includes(profile.role)
+        ) {
+          router.replace("/dashboard/updates");
+          return;
+        }
+
+        const currentRole = profile.role;
+
+        // ADMIN: SEMUA PROYEK AKTIF.
+        // PM: PROYEK YANG MENJADI TANGGUNG JAWABNYA.
+        let projectQuery = supabase
+          .from("projects")
+          .select("id, project_name")
+          .eq("is_archived", false)
+          .order("created_at", { ascending: false });
+
+        if (currentRole === "Project Manager") {
+          projectQuery = projectQuery.eq("pic_id", user.id);
+        }
+
+        const { data, error: projectsError } = await projectQuery;
+
+        if (cancelled) return;
+
+        if (projectsError) {
+          console.error("Gagal memuat proyek:", projectsError);
+          setError("Data proyek gagal dimuat. Silakan muat ulang halaman.");
+          return;
+        }
+
+        setProjects((data ?? []) as Project[]);
+        setProjectId("");
+      } catch (loadError) {
+        console.error("Gagal memuat proyek:", loadError);
+
+        if (!cancelled) {
+          setError("Terjadi kesalahan saat memuat data proyek.");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingProjects(false);
+        }
       }
-
-      // Memeriksa hak akses pengguna
-      const { data: profile, error: profileError } = await supabase
-        .from("users")
-        .select("role")
-        .eq("id", user.id)
-        .single();
-
-      if (
-        profileError ||
-        !profile ||
-        !["Admin", "Project Manager", "Staff"].includes(profile.role)
-      ) {
-        router.push("/dashboard");
-        return;
-      }
-
-      // Mengambil daftar proyek
-      const { data, error: projectsError } = await supabase
-        .from("projects")
-        .select("id, project_name")
-        .order("created_at", { ascending: false });
-
-      if (projectsError) {
-        setError("Data proyek gagal dimuat. Silakan muat ulang halaman.");
-        setLoadingProjects(false);
-        return;
-      }
-
-      setProjects(data || []);
-
-      if (data && data.length > 0) {
-        setProjectId(data[0].id);
-      }
-
-      setLoadingProjects(false);
     }
 
     loadProjects();
 
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router]);
+    return () => {
+      cancelled = true;
+    };
+  }, [router, supabase]);
 
+  // SIMPAN PEMBARUAN
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+
+    if (saving || loadingProjects) return;
+
     setError("");
 
-    if (!projectId) {
-      setError("Silakan pilih proyek.");
+    const selectedProjectId = String(projectId).trim();
+
+    const selectedProject = projects.find(
+      (project) => String(project.id).trim() === selectedProjectId,
+    );
+
+    if (!selectedProjectId || !selectedProject) {
+      setError("Silakan pilih proyek yang tersedia.");
       return;
     }
 
@@ -160,123 +228,112 @@ export default function AddProjectUpdatePage() {
     setSaving(true);
 
     try {
-      // Mendapatkan pengguna yang sedang login
+      // VERIFIKASI KEMBALI PENGGUNA
       const {
         data: { user },
         error: userError,
       } = await supabase.auth.getUser();
 
       if (userError || !user) {
-        setError("Sesi pengguna tidak ditemukan. Silakan login kembali.");
-        return;
+        throw new Error(
+          "Sesi pengguna tidak ditemukan. Silakan login kembali.",
+        );
       }
 
-      // Menyimpan pembaruan proyek
+      // VERIFIKASI ROLE TERBARU
+      const { data: profile, error: profileError } = await supabase
+        .from("users")
+        .select("role")
+        .eq("id", user.id)
+        .single();
+
+      if (profileError || !profile) {
+        throw new Error("Gagal memverifikasi hak akses pengguna.");
+      }
+
+      const currentRole = profile.role;
+
+      if (!["Admin", "Project Manager"].includes(currentRole)) {
+        throw new Error("Kamu tidak memiliki izin membuat pembaruan proyek.");
+      }
+
+      const finalClientVisible = clientVisible;
+
+      // SIMPAN PEMBARUAN PROYEK
       const { data: insertedUpdate, error: insertError } = await supabase
         .from("project_updates")
         .insert({
-          project_id: projectId,
+          project_id: selectedProjectId,
           title: title.trim(),
           content: content.trim(),
-          client_visible: clientVisible,
+          client_visible: finalClientVisible,
           created_by: user.id,
         })
         .select("id, project_id, title")
         .single();
 
       if (insertError) {
-        setError(insertError.message);
-        return;
+        console.error("Gagal menyimpan pembaruan:", insertError);
+        throw new Error(insertError.message);
       }
 
-      // Mencatat aktivitas
-      const { error: logError } = await createActivityLog({
-        action: "CREATE_PROJECT_UPDATE",
-        description: `Membuat pembaruan proyek "${title.trim()}".`,
-        projectId,
-        metadata: {
-          update_id: insertedUpdate.id,
-          title: title.trim(),
-          client_visible: clientVisible,
-        },
-      });
-
-      if (logError) {
-        console.error("Gagal mencatat aktivitas:", logError);
+      if (!insertedUpdate) {
+        throw new Error("Pembaruan proyek gagal disimpan.");
       }
 
-      router.push("/dashboard/updates");
+      // ACTIVITY LOG
+      // KEGAGALAN LOG TIDAK MEMBATALKAN PEMBARUAN YANG TERSIMPAN.
+      try {
+        const { error: logError } = await createActivityLog({
+          action: "CREATE_PROJECT_UPDATE",
+          description: `Membuat pembaruan proyek "${insertedUpdate.title}".`,
+          projectId: insertedUpdate.project_id,
+          metadata: {
+            update_id: insertedUpdate.id,
+            title: insertedUpdate.title,
+            client_visible: finalClientVisible,
+          },
+        });
+
+        if (logError) {
+          console.error("Gagal mencatat aktivitas:", logError);
+        }
+      } catch (logError) {
+        console.error("Activity log exception:", logError);
+      }
+
+      router.push("/dashboard/updates?success=created");
       router.refresh();
-    } catch {
-      setError("Terjadi kesalahan. Silakan coba kembali.");
+    } catch (submitError) {
+      console.error("Gagal menyimpan pembaruan proyek:", submitError);
+
+      setError(
+        submitError instanceof Error
+          ? `Terjadi kesalahan: ${submitError.message}`
+          : "Terjadi kesalahan. Silakan coba kembali.",
+      );
     } finally {
       setSaving(false);
     }
   }
 
-  if (loadingProjects) {
-    return (
-      <main className="min-h-screen bg-[#111111] px-5 py-6 text-white sm:px-7 lg:px-8">
-        <header className="mb-8 mt-2">
-          <h1 className={TEXT.pageTitle}>Tambah Pembaruan Proyek</h1>
-          <p className={TEXT.subtitle}>
-            Catat perkembangan terbaru dari proyek.
-          </p>
-        </header>
-
-        <div className={formClass}>
-          <p className="text-sm text-zinc-400">Memuat data proyek...</p>
-        </div>
-      </main>
-    );
-  }
-
   return (
-    <main className="min-h-screen bg-[#111111] px-5 py-6 text-white sm:px-7 lg:px-8">
-      {/* Judul Halaman */}
-      <header className="mb-8">
-        <div className="mb-5">
-          <Link
-            href="/dashboard/updates"
-            className="inline-flex items-center gap-2 text-sm text-zinc-400 transition-colors hover:text-[#B7FE1A]"
-          >
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path d="m15 18-6-6 6-6" />
-            </svg>
-            Kembali
-          </Link>
-        </div>
+    <main className="min-h-screen bg-[#f7f7f5] px-5 py-6 text-[#1f1e30] sm:px-7 lg:px-8">
+      <BackLink />
 
-        <h1 className={TEXT.pageTitle}>Tambah Pembaruan Proyek</h1>
-        <p className={TEXT.subtitle}>
-          Catat perkembangan terbaru dan tentukan informasi yang dapat dilihat
-          oleh klien.
-        </p>
-      </header>
-
-      {/* Pesan Kesalahan */}
+      {/* PESAN KESALAHAN */}
       {error && (
         <div
           role="alert"
-          className="mb-6 max-w-4xl rounded-xl border border-red-500/20 bg-red-500/[0.06] px-4 py-3 text-sm text-red-400"
+          className="mb-6 max-w-5xl rounded-xl border border-red-200 bg-white px-4 py-3 text-sm text-red-600"
         >
           {error}
         </div>
       )}
 
-      {/* Formulir */}
+      {/* FORMULIR */}
       <form onSubmit={handleSubmit} className={formClass}>
-        {/* Proyek */}
+        {/* PROYEK */}
         <div className={fieldClass}>
           <label htmlFor="project" className={TEXT.label}>
             Proyek <span className="text-red-500">*</span>
@@ -286,10 +343,12 @@ export default function AddProjectUpdatePage() {
             id="project"
             value={projectId}
             onChange={(e) => setProjectId(e.target.value)}
-            disabled={saving || projects.length === 0}
             required
+            disabled={saving || loadingProjects}
           >
-            <option value="">Pilih proyek</option>
+            <option value="" disabled hidden>
+              Pilih proyek
+            </option>
 
             {projects.map((project) => (
               <option key={project.id} value={project.id}>
@@ -299,14 +358,13 @@ export default function AddProjectUpdatePage() {
           </CustomSelect>
 
           {projects.length === 0 && (
-            <p className="text-xs leading-5 text-zinc-500">
-              Belum ada proyek. Tambahkan proyek terlebih dahulu sebelum membuat
-              pembaruan.
+            <p className="text-xs leading-5 text-[#777777]">
+              Belum ada proyek yang tersedia untuk membuat pembaruan.
             </p>
           )}
         </div>
 
-        {/* Judul Pembaruan */}
+        {/* JUDUL PEMBARUAN */}
         <div className={fieldClass}>
           <label htmlFor="title" className={TEXT.label}>
             Judul Pembaruan <span className="text-red-500">*</span>
@@ -317,14 +375,14 @@ export default function AddProjectUpdatePage() {
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="Contoh: Pengembangan halaman utama selesai"
+            placeholder="Masukkan judul pembaruan"
             className={TEXT.input}
             disabled={saving}
             required
           />
         </div>
 
-        {/* Isi Pembaruan */}
+        {/* ISI PEMBARUAN */}
         <div className={fieldClass}>
           <label htmlFor="content" className={TEXT.label}>
             Isi Pembaruan <span className="text-red-500">*</span>
@@ -335,15 +393,15 @@ export default function AddProjectUpdatePage() {
             value={content}
             onChange={(e) => setContent(e.target.value)}
             rows={5}
-            placeholder="Jelaskan perkembangan terbaru dari proyek..."
+            placeholder="Tambahkan informasi mengenai perkembangan terbaru proyek"
             className={TEXT.textarea}
             disabled={saving}
             required
           />
         </div>
 
-        {/* Visibilitas Klien */}
-        <div className="flex items-start gap-3 rounded-xl border border-[#2a2a2a] bg-[#111111]/70 p-4">
+        {/* VISIBILITAS KLIEN */}
+        <div className="flex items-start gap-3 rounded-xl border border-[#EEEEEE] bg-[#f7f7f5] p-4">
           <input
             id="clientVisible"
             type="checkbox"
@@ -356,19 +414,19 @@ export default function AddProjectUpdatePage() {
           <div>
             <label
               htmlFor="clientVisible"
-              className="cursor-pointer text-sm font-medium text-white"
+              className="cursor-pointer text-sm font-medium text-[#1f1e30]"
             >
               Tampilkan kepada klien
             </label>
 
-            <p className="mt-1 text-sm leading-6 text-zinc-400">
-              Jika diaktifkan, pembaruan ini dapat dilihat klien melalui halaman
-              proyek publik.
+            <p className="mt-1 text-sm leading-6 text-[#777777]">
+              Jika diaktifkan, pembaruan ini dapat dilihat klien melalui
+              halaman proyek publik.
             </p>
           </div>
         </div>
 
-        {/* Tombol Aksi */}
+        {/* TOMBOL AKSI */}
         <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
           <button
             type="button"
@@ -381,17 +439,10 @@ export default function AddProjectUpdatePage() {
 
           <button
             type="submit"
-            disabled={saving || projects.length === 0}
+            disabled={saving || loadingProjects || projects.length === 0}
             className={TEXT.primaryButton}
           >
-            {saving ? (
-              <>
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-black/30 border-t-black" />
-                Menyimpan...
-              </>
-            ) : (
-              "Simpan Pembaruan"
-            )}
+            {saving ? "Menyimpan..." : "Tambah"}
           </button>
         </div>
       </form>

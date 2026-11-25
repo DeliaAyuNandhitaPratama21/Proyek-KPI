@@ -17,26 +17,77 @@ type ClientData = {
   status: string | null;
 };
 
+const TEXT = {
+  label: "block text-sm font-medium text-[#1f1e30]",
+
+  input:
+    "h-[54px] w-full rounded-xl border border-[#EEEEEE] bg-white px-4 text-sm text-[#1f1e30] outline-none transition-colors placeholder:text-[#999999] focus:border-[#1f1e30] disabled:cursor-not-allowed disabled:opacity-50",
+
+  textarea:
+    "w-full resize-y rounded-xl border border-[#EEEEEE] bg-white px-4 py-3 text-sm leading-6 text-[#1f1e30] outline-none transition-colors placeholder:text-[#999999] focus:border-[#1f1e30] disabled:cursor-not-allowed disabled:opacity-50",
+
+  primaryButton:
+    "inline-flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#B7FE1A] px-4 text-sm font-[500] text-[#1f1e30] transition-colors hover:bg-[#a8ed12] disabled:cursor-not-allowed disabled:opacity-50 sm:w-[130px]",
+
+  secondaryButton:
+    "inline-flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#1f1e30] px-4 text-sm font-normal text-white transition-colors hover:bg-[#333247] disabled:cursor-not-allowed disabled:opacity-50 sm:w-[130px]",
+};
+
+const fieldClass = "flex flex-col gap-2";
+
+const formClass =
+  "flex max-w-5xl flex-col gap-6 rounded-2xl border border-[#EEEEEE] bg-white p-5 shadow-[0_2px_10px_rgba(31,30,48,0.04)] sm:p-8";
+
+function BackLink({ isArchived }: { isArchived: boolean }) {
+  return (
+    <div className="mb-6">
+      <Link
+        href={isArchived ? "/dashboard/clients/archive" : "/dashboard/clients"}
+        className="inline-flex cursor-pointer items-center gap-2 text-sm font-semibold text-[#65A30D] transition-colors hover:text-[#4D7C0F]"
+      >
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="m15 18-6-6 6-6" />
+        </svg>
+        Kembali
+      </Link>
+    </div>
+  );
+}
+
 export default function EditClientPage() {
   const params = useParams();
   const router = useRouter();
   const clientId = Number(params.id);
 
   const [client, setClient] = useState<ClientData | null>(null);
+
   const [companyName, setCompanyName] = useState("");
   const [contactPerson, setContactPerson] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
   const [email, setEmail] = useState("");
   const [address, setAddress] = useState("");
   const [notes, setNotes] = useState("");
-  const [status, setStatus] = useState("Active");
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [archiving, setArchiving] = useState(false);
+
   const [errorMessage, setErrorMessage] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
+
+  const isArchived = client?.status === "Archived";
+
+  const backUrl = isArchived
+    ? "/dashboard/clients/archive"
+    : "/dashboard/clients";
 
   useEffect(() => {
     async function fetchClient() {
@@ -54,10 +105,17 @@ export default function EditClientPage() {
           "id, company_name, contact_person, whatsapp, email, address, notes, status",
         )
         .eq("id", clientId)
-        .single();
+        .maybeSingle();
 
-      if (error || !data) {
-        setErrorMessage("Data klien tidak ditemukan.");
+      if (error) {
+        console.error("Gagal mengambil data klien:", error);
+        setErrorMessage(`Gagal memuat data klien: ${error.message}`);
+        setLoading(false);
+        return;
+      }
+
+      if (!data) {
+        setErrorMessage("Data klien tidak ditemukan atau tidak dapat diakses.");
         setLoading(false);
         return;
       }
@@ -71,7 +129,7 @@ export default function EditClientPage() {
       setEmail(clientData.email ?? "");
       setAddress(clientData.address ?? "");
       setNotes(clientData.notes ?? "");
-      setStatus(clientData.status ?? "Active");
+
       setLoading(false);
     }
 
@@ -81,11 +139,13 @@ export default function EditClientPage() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!client) return;
+    if (!companyName.trim()) {
+      setErrorMessage("Nama perusahaan wajib diisi.");
+      return;
+    }
 
     setSaving(true);
     setErrorMessage("");
-    setSuccessMessage("");
 
     try {
       const supabase = createClient();
@@ -99,40 +159,41 @@ export default function EditClientPage() {
           email: email.trim() || null,
           address: address.trim() || null,
           notes: notes.trim() || null,
-          status,
           updated_at: new Date().toISOString(),
         })
         .eq("id", clientId)
         .select("id, company_name")
-        .single();
+        .maybeSingle();
 
       if (error) throw new Error(error.message);
-
-      const logResult = await createActivityLog({
-        action: "UPDATE_CLIENT",
-        description: `Memperbarui data klien ${data.company_name}`,
-        metadata: {
-          client_id: data.id,
-          company_name: data.company_name,
-        },
-      });
-
-      if (logResult.error) {
-        console.error("Gagal mencatat activity log:", logResult.error);
+      if (!data) {
+        throw new Error(
+          "Data klien tidak berhasil diperbarui. Periksa kembali data dan izin akses.",
+        );
       }
 
-      setSuccessMessage("Data klien berhasil diperbarui.");
+      // Activity log bersifat best-effort: kegagalannya tidak membatalkan update.
+      try {
+        const logResult = await createActivityLog({
+          action: "UPDATE_CLIENT",
+          description: `Memperbarui data klien ${data.company_name}`,
+          metadata: {
+            client_id: data.id,
+            company_name: data.company_name,
+          },
+        });
 
-      setClient({
-        ...client,
-        company_name: companyName.trim(),
-        contact_person: contactPerson.trim() || null,
-        whatsapp: whatsapp.trim() || null,
-        email: email.trim() || null,
-        address: address.trim() || null,
-        notes: notes.trim() || null,
-        status,
-      });
+        if (logResult.error) {
+          console.error("Gagal mencatat activity log:", logResult.error);
+        }
+      } catch (logError) {
+        console.error("Gagal mencatat activity log:", logError);
+      }
+
+      // Klien aktif kembali ke daftar dengan penanda notifikasi berhasil.
+      // Jika klien sedang diarsipkan, pertahankan tujuan kembali ke halaman arsip.
+      router.push(isArchived ? backUrl : "/dashboard/clients?updated=1");
+      router.refresh();
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -144,328 +205,159 @@ export default function EditClientPage() {
     }
   }
 
-  async function handleDelete() {
-    if (!client) return;
-
-    const confirmed = window.confirm(
-      `Yakin ingin menghapus klien "${client.company_name}"? Tindakan ini tidak dapat dibatalkan.`,
-    );
-
-    if (!confirmed) return;
-
-    setDeleting(true);
-    setErrorMessage("");
-    setSuccessMessage("");
-
-    try {
-      const supabase = createClient();
-
-      const { count, error: projectError } = await supabase
-        .from("projects")
-        .select("id", { count: "exact", head: true })
-        .eq("client_id", clientId);
-
-      if (projectError) {
-        throw new Error("Gagal memeriksa proyek milik klien.");
-      }
-
-      if ((count ?? 0) > 0) {
-        throw new Error(
-          "Klien tidak bisa dihapus karena masih memiliki proyek.",
-        );
-      }
-
-      const { data, error } = await supabase
-        .from("clients")
-        .delete()
-        .eq("id", clientId)
-        .select("id, company_name")
-        .single();
-
-      if (error) throw new Error(error.message);
-
-      const logResult = await createActivityLog({
-        action: "DELETE_CLIENT",
-        description: `Menghapus klien ${data.company_name}`,
-        metadata: {
-          client_id: data.id,
-          company_name: data.company_name,
-        },
-      });
-
-      if (logResult.error) {
-        console.error("Gagal mencatat activity log:", logResult.error);
-      }
-
-      router.push("/dashboard/clients");
-      router.refresh();
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Gagal menghapus klien.",
-      );
-    } finally {
-      setDeleting(false);
-    }
-  }
-
-  async function handleArchive() {
-    if (!client) return;
-
-    const confirmed = window.confirm(
-      `Yakin ingin mengarsipkan klien "${client.company_name}"?`,
-    );
-
-    if (!confirmed) return;
-
-    setArchiving(true);
-    setErrorMessage("");
-    setSuccessMessage("");
-
-    try {
-      const supabase = createClient();
-
-      const { data, error } = await supabase
-        .from("clients")
-        .update({
-          status: "Archived",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", clientId)
-        .select("id, company_name")
-        .single();
-
-      if (error) throw new Error(error.message);
-
-      const logResult = await createActivityLog({
-        action: "ARCHIVE_CLIENT",
-        description: `Mengarsipkan klien ${data.company_name}`,
-        metadata: {
-          client_id: data.id,
-          company_name: data.company_name,
-        },
-      });
-
-      if (logResult.error) {
-        console.error("Gagal mencatat activity log:", logResult.error);
-      }
-
-      setStatus("Archived");
-      setClient({ ...client, status: "Archived" });
-      setSuccessMessage("Klien berhasil diarsipkan.");
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Gagal mengarsipkan klien.",
-      );
-    } finally {
-      setArchiving(false);
-    }
-  }
-
   if (loading) {
     return (
-      <main className="min-h-screen bg-[#111111] p-6 text-white">
-        <p className="text-sm text-zinc-400">Memuat data klien...</p>
+      <main className="min-h-screen bg-[#f7f7f5] px-5 py-6 text-[#1f1e30] sm:px-7 lg:px-8">
+        <p className="text-sm text-[#777777]">Memuat data klien...</p>
       </main>
     );
   }
 
   if (!client) {
     return (
-      <main className="min-h-screen bg-[#111111] p-6 text-white">
-        <Link
-          href="/dashboard/clients"
-          className="text-sm text-[#B7FE1A] hover:opacity-70"
-        >
-          ← Kembali ke Klien
-        </Link>
+      <main className="min-h-screen bg-[#f7f7f5] px-5 py-6 text-[#1f1e30] sm:px-7 lg:px-8">
+        <BackLink isArchived={false} />
 
-        <p className="mt-6 text-red-400">
+        <p className="mt-6 text-sm text-red-600">
           {errorMessage || "Data klien tidak ditemukan."}
         </p>
       </main>
     );
   }
 
-  const inputClass =
-    "mt-2 w-full rounded-lg border border-zinc-700 bg-[#111111] px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-600 focus:border-[#B7FE1A]";
-
-  const labelClass = "text-sm font-medium text-zinc-300";
-
   return (
-    <main className="min-h-screen bg-[#111111] p-6 text-white">
-      <div className="mx-auto max-w-4xl">
-        <Link
-          href="/dashboard/clients"
-          className="text-sm text-zinc-400 transition hover:text-[#B7FE1A]"
-        >
-          ← Kembali ke Klien
-        </Link>
+    <main className="min-h-screen bg-[#f7f7f5] px-5 py-6 text-[#1f1e30] sm:px-7 lg:px-8">
+      {/* KEMBALI */}
+      <BackLink isArchived={Boolean(isArchived)} />
 
-        <div className="mb-6 mt-5">
-          <h1 className="text-2xl font-semibold">Edit Klien</h1>
-          <p className="mt-2 text-sm text-zinc-400">
-            Perbarui informasi klien di bawah ini.
-          </p>
+      {/* FORM EDIT KLIEN */}
+      <form onSubmit={handleSubmit} className={formClass}>
+        {errorMessage && (
+          <div
+            role="alert"
+            className="rounded-xl border border-red-200 bg-white px-4 py-3 text-sm text-red-600"
+          >
+            {errorMessage}
+          </div>
+        )}
+
+        <div className={fieldClass}>
+          <label htmlFor="companyName" className={TEXT.label}>
+            Nama Perusahaan <span className="text-red-500">*</span>
+          </label>
+          <input
+            id="companyName"
+            type="text"
+            value={companyName}
+            onChange={(event) => setCompanyName(event.target.value)}
+            className={TEXT.input}
+            placeholder="Masukkan nama perusahaan"
+            disabled={saving}
+            maxLength={200}
+            required
+          />
         </div>
 
-        <form
-          onSubmit={handleSubmit}
-          className="rounded-xl border border-zinc-800 bg-[#191919] p-6"
-        >
-          {errorMessage && (
-            <div className="mb-5 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-              {errorMessage}
-            </div>
-          )}
+        <div className={fieldClass}>
+          <label htmlFor="contactPerson" className={TEXT.label}>
+            Nama Kontak
+          </label>
+          <input
+            id="contactPerson"
+            type="text"
+            value={contactPerson}
+            onChange={(event) => setContactPerson(event.target.value)}
+            className={TEXT.input}
+            placeholder="Masukkan nama kontak"
+            disabled={saving}
+            maxLength={200}
+          />
+        </div>
 
-          {successMessage && (
-            <div className="mb-5 rounded-lg border border-[#B7FE1A]/20 bg-[#B7FE1A]/10 px-4 py-3 text-sm text-[#B7FE1A]">
-              {successMessage}
-            </div>
-          )}
+        <div className={fieldClass}>
+          <label htmlFor="whatsapp" className={TEXT.label}>
+            Nomor WhatsApp
+          </label>
+          <input
+            id="whatsapp"
+            type="tel"
+            value={whatsapp}
+            onChange={(event) => setWhatsapp(event.target.value)}
+            className={TEXT.input}
+            placeholder="Masukkan nomor WhatsApp"
+            disabled={saving}
+            maxLength={30}
+          />
+        </div>
 
-          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-            <div>
-              <label htmlFor="companyName" className={labelClass}>
-                Nama Perusahaan *
-              </label>
-              <input
-                id="companyName"
-                type="text"
-                value={companyName}
-                onChange={(event) => setCompanyName(event.target.value)}
-                className={inputClass}
-                placeholder="Masukkan nama perusahaan"
-                required
-              />
-            </div>
+        <div className={fieldClass}>
+          <label htmlFor="email" className={TEXT.label}>
+            Email
+          </label>
+          <input
+            id="email"
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            className={TEXT.input}
+            placeholder="Masukkan email"
+            disabled={saving}
+            maxLength={254}
+          />
+        </div>
 
-            <div>
-              <label htmlFor="contactPerson" className={labelClass}>
-                Nama Kontak
-              </label>
-              <input
-                id="contactPerson"
-                type="text"
-                value={contactPerson}
-                onChange={(event) => setContactPerson(event.target.value)}
-                className={inputClass}
-                placeholder="Masukkan nama kontak"
-              />
-            </div>
+        <div className={fieldClass}>
+          <label htmlFor="address" className={TEXT.label}>
+            Alamat
+          </label>
+          <textarea
+            id="address"
+            value={address}
+            onChange={(event) => setAddress(event.target.value)}
+            rows={2}
+            placeholder="Masukkan alamat perusahaan"
+            className={TEXT.textarea}
+            disabled={saving}
+            maxLength={2000}
+          />
+        </div>
 
-            <div>
-              <label htmlFor="whatsapp" className={labelClass}>
-                WhatsApp
-              </label>
-              <input
-                id="whatsapp"
-                type="text"
-                value={whatsapp}
-                onChange={(event) => setWhatsapp(event.target.value)}
-                className={inputClass}
-                placeholder="Masukkan nomor WhatsApp"
-              />
-            </div>
+        <div className={fieldClass}>
+          <label htmlFor="notes" className={TEXT.label}>
+            Catatan
+          </label>
+          <textarea
+            id="notes"
+            value={notes}
+            onChange={(event) => setNotes(event.target.value)}
+            rows={3}
+            placeholder="Tambahkan catatan jika diperlukan"
+            className={TEXT.textarea}
+            disabled={saving}
+            maxLength={5000}
+          />
+        </div>
 
-            <div>
-              <label htmlFor="email" className={labelClass}>
-                Email
-              </label>
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                className={inputClass}
-                placeholder="Masukkan email"
-              />
-            </div>
+        {/* TOMBOL AKSI */}
+        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={() => router.push(backUrl)}
+            disabled={saving}
+            className={TEXT.secondaryButton}
+          >
+            Batal
+          </button>
 
-            <div className="md:col-span-2">
-              <label htmlFor="address" className={labelClass}>
-                Alamat
-              </label>
-              <textarea
-                id="address"
-                value={address}
-                onChange={(event) => setAddress(event.target.value)}
-                className={inputClass}
-                placeholder="Masukkan alamat"
-                rows={3}
-              />
-            </div>
-
-            <div className="md:col-span-2">
-              <label htmlFor="notes" className={labelClass}>
-                Catatan
-              </label>
-              <textarea
-                id="notes"
-                value={notes}
-                onChange={(event) => setNotes(event.target.value)}
-                className={inputClass}
-                placeholder="Masukkan catatan tambahan"
-                rows={3}
-              />
-            </div>
-
-            <div>
-              <label htmlFor="status" className={labelClass}>
-                Status
-              </label>
-              <select
-                id="status"
-                value={status}
-                onChange={(event) => setStatus(event.target.value)}
-                className={inputClass}
-              >
-                <option value="Active">Active</option>
-                <option value="Archived">Archived</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="mt-8 flex flex-wrap items-center justify-between gap-4 border-t border-zinc-800 pt-5">
-            <button
-              type="button"
-              onClick={handleDelete}
-              disabled={deleting || saving || archiving}
-              className="rounded-lg border border-red-500/30 px-4 py-2.5 text-sm font-medium text-red-400 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {deleting ? "Menghapus..." : "Hapus Klien"}
-            </button>
-
-            <div className="flex flex-wrap gap-3">
-              <button
-                type="button"
-                onClick={handleArchive}
-                disabled={
-                  archiving || deleting || saving || status === "Archived"
-                }
-                className="rounded-lg border border-zinc-700 px-4 py-2.5 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {archiving ? "Mengarsipkan..." : "Arsipkan"}
-              </button>
-
-              <Link
-                href="/dashboard/clients"
-                className="rounded-lg border border-zinc-700 px-4 py-2.5 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800"
-              >
-                Batal
-              </Link>
-
-              <button
-                type="submit"
-                disabled={saving || deleting || archiving}
-                className="rounded-lg bg-[#B7FE1A] px-5 py-2.5 text-sm font-semibold text-black transition hover:bg-[#a6e817] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {saving ? "Menyimpan..." : "Simpan Perubahan"}
-              </button>
-            </div>
-          </div>
-        </form>
-      </div>
+          <button
+            type="submit"
+            disabled={saving}
+            className={TEXT.primaryButton}
+          >
+            {saving ? "Menyimpan..." : "Simpan"}
+          </button>
+        </div>
+      </form>
     </main>
   );
 }

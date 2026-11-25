@@ -7,34 +7,32 @@ import { createClient } from "../../../../lib/supabase/client";
 import { createActivityLog } from "../../../../lib/activity-log";
 
 const TEXT = {
-  pageTitle: "text-3xl font-semibold tracking-tight text-white",
-  subtitle: "mt-1 text-sm text-zinc-400",
-  label: "block text-sm font-medium text-white",
+  label: "block text-sm font-medium text-[#1f1e30]",
 
   input:
-    "h-[54px] w-full rounded-xl border border-[#2a2a2a] bg-[#1c1c1c] px-4 text-sm text-white outline-none transition-colors placeholder:text-zinc-500 focus:border-[#B7FE1A] disabled:cursor-not-allowed disabled:opacity-50",
+    "h-[54px] w-full rounded-xl border border-[#EEEEEE] bg-white px-4 text-sm text-[#1f1e30] outline-none transition-colors placeholder:text-[#999999] focus:border-[#1f1e30] disabled:cursor-not-allowed disabled:opacity-50",
 
   textarea:
-    "w-full resize-none rounded-xl border border-[#2a2a2a] bg-[#1c1c1c] px-4 py-3 text-sm leading-6 text-white outline-none transition-colors placeholder:text-zinc-500 focus:border-[#B7FE1A] disabled:cursor-not-allowed disabled:opacity-50",
+    "w-full resize-y rounded-xl border border-[#EEEEEE] bg-white px-4 py-3 text-sm leading-6 text-[#1f1e30] outline-none transition-colors placeholder:text-[#999999] focus:border-[#1f1e30] disabled:cursor-not-allowed disabled:opacity-50",
 
   primaryButton:
-    "inline-flex items-center justify-center gap-2 rounded-xl bg-[#B7FE1A] px-5 py-3 text-sm font-semibold text-black transition-colors hover:bg-[#caff57] disabled:cursor-not-allowed disabled:opacity-50",
+    "inline-flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#B7FE1A] px-4 text-sm font-[500] text-[#1f1e30] transition-colors hover:bg-[#a8ed12] disabled:cursor-not-allowed disabled:opacity-50 sm:w-[130px]",
 
   secondaryButton:
-    "inline-flex items-center justify-center rounded-xl px-5 py-3 text-sm font-medium text-zinc-400 transition-colors hover:bg-white/[0.05] hover:text-white disabled:cursor-not-allowed disabled:opacity-50",
+    "inline-flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#1f1e30] px-4 text-sm font-normal text-white transition-colors hover:bg-[#333247] disabled:cursor-not-allowed disabled:opacity-50 sm:w-[130px]",
 };
 
 const fieldClass = "flex flex-col gap-2";
 
 const formClass =
-  "flex max-w-4xl flex-col gap-6 rounded-[22px] border border-[#2a2a2a] bg-[#1c1c1c]/80 p-5 sm:p-8";
+  "flex max-w-5xl flex-col gap-6 rounded-2xl border border-[#EEEEEE] bg-white p-5 shadow-[0_2px_10px_rgba(31,30,48,0.04)] sm:p-8";
 
 function BackLink() {
   return (
-    <div className="mb-5">
+    <div className="mb-6">
       <Link
         href="/dashboard/clients"
-        className="inline-flex items-center gap-2 text-sm text-zinc-400 transition-colors hover:text-[#B7FE1A]"
+        className="inline-flex cursor-pointer items-center gap-2 text-sm font-semibold text-[#65A30D] transition-colors hover:text-[#4D7C0F]"
       >
         <svg
           width="18"
@@ -52,18 +50,6 @@ function BackLink() {
         Kembali
       </Link>
     </div>
-  );
-}
-
-function PageHeader() {
-  return (
-    <header className="mb-8">
-      <BackLink />
-      <h1 className={TEXT.pageTitle}>Tambah Klien</h1>
-      <p className={TEXT.subtitle}>
-        Tambahkan informasi klien baru ke dalam sistem.
-      </p>
-    </header>
   );
 }
 
@@ -116,23 +102,26 @@ export default function NewClientPage() {
         throw new Error("Data klien gagal disimpan. Silakan coba lagi.");
       }
 
-      const logResult = await createActivityLog({
-        action: "CREATE_CLIENT",
-        description: `Menambahkan klien "${data.company_name}"`,
-        metadata: {
-          client_id: data.id,
-          company_name: data.company_name,
-        },
-      });
+      // Activity log bersifat best-effort:
+      // kegagalannya tidak membatalkan penambahan klien.
+      try {
+        const logResult = await createActivityLog({
+          action: "CREATE_CLIENT",
+          description: `Menambahkan klien "${data.company_name}"`,
+          metadata: {
+            client_id: data.id,
+            company_name: data.company_name,
+          },
+        });
 
-      if (logResult.error) {
-        console.error(
-          "Gagal mencatat aktivitas:",
-          logResult.error.message
-        );
+        if (logResult.error) {
+          console.error("Gagal mencatat aktivitas:", logResult.error.message);
+        }
+      } catch (logError) {
+        console.error("Gagal mencatat aktivitas:", logError);
       }
 
-      router.push("/dashboard/clients");
+      router.push("/dashboard/clients?created=1");
       router.refresh();
     } catch (err) {
       console.error("Terjadi kesalahan:", err);
@@ -140,7 +129,7 @@ export default function NewClientPage() {
       setError(
         err instanceof Error
           ? err.message
-          : "Terjadi kesalahan. Silakan coba lagi."
+          : "Terjadi kesalahan. Silakan coba lagi.",
       );
     } finally {
       setSaving(false);
@@ -148,23 +137,26 @@ export default function NewClientPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#111111] px-5 py-6 text-white sm:px-7 lg:px-8">
-      <PageHeader />
+    <main className="min-h-screen bg-[#f7f7f5] px-5 py-6 text-[#1f1e30] sm:px-7 lg:px-8">
+      {/* KEMBALI */}
+      <BackLink />
 
       {error && (
         <div
           role="alert"
-          className="mb-6 max-w-4xl rounded-xl border border-red-500/20 bg-red-500/[0.06] px-4 py-3 text-sm text-red-400"
+          className="mb-6 max-w-4xl rounded-xl border border-red-200 bg-white px-4 py-3 text-sm text-red-600"
         >
           {error}
         </div>
       )}
 
+      {/* FORM TAMBAH KLIEN */}
       <form onSubmit={handleSubmit} className={formClass}>
         <div className={fieldClass}>
           <label htmlFor="companyName" className={TEXT.label}>
             Nama Perusahaan <span className="text-red-500">*</span>
           </label>
+
           <input
             id="companyName"
             type="text"
@@ -182,6 +174,7 @@ export default function NewClientPage() {
           <label htmlFor="contactPerson" className={TEXT.label}>
             Nama Kontak
           </label>
+
           <input
             id="contactPerson"
             type="text"
@@ -198,12 +191,13 @@ export default function NewClientPage() {
           <label htmlFor="whatsapp" className={TEXT.label}>
             Nomor WhatsApp
           </label>
+
           <input
             id="whatsapp"
             type="tel"
             value={whatsapp}
             onChange={(e) => setWhatsapp(e.target.value)}
-            placeholder="Contoh: 081234567890"
+            placeholder="Masukkan nomor WhatsApp"
             className={TEXT.input}
             disabled={saving}
             maxLength={30}
@@ -212,14 +206,15 @@ export default function NewClientPage() {
 
         <div className={fieldClass}>
           <label htmlFor="email" className={TEXT.label}>
-            Alamat Email
+            Email
           </label>
+
           <input
             id="email"
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="nama@email.com"
+            placeholder="Masukkan email"
             className={TEXT.input}
             disabled={saving}
             maxLength={254}
@@ -230,12 +225,13 @@ export default function NewClientPage() {
           <label htmlFor="address" className={TEXT.label}>
             Alamat
           </label>
+
           <textarea
             id="address"
             value={address}
             onChange={(e) => setAddress(e.target.value)}
-            rows={3}
-            placeholder="Masukkan alamat klien"
+            rows={2}
+            placeholder="Masukkan alamat perusahaan"
             className={TEXT.textarea}
             disabled={saving}
             maxLength={2000}
@@ -246,19 +242,21 @@ export default function NewClientPage() {
           <label htmlFor="notes" className={TEXT.label}>
             Catatan
           </label>
+
           <textarea
             id="notes"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            rows={4}
-            placeholder="Tambahkan catatan mengenai klien..."
+            rows={3}
+            placeholder="Tambahkan catatan jika diperlukan"
             className={TEXT.textarea}
             disabled={saving}
             maxLength={5000}
           />
         </div>
 
-        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+        {/* TOMBOL AKSI */}
+        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
           <button
             type="button"
             onClick={() => router.push("/dashboard/clients")}
@@ -273,14 +271,7 @@ export default function NewClientPage() {
             disabled={saving}
             className={TEXT.primaryButton}
           >
-            {saving ? (
-              <>
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-black/30 border-t-black" />
-                Menyimpan...
-              </>
-            ) : (
-              "Simpan Klien"
-            )}
+            {saving ? "Menyimpan..." : "Tambah"}
           </button>
         </div>
       </form>

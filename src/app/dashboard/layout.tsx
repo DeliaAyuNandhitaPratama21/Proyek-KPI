@@ -32,11 +32,25 @@ export default async function DashboardLayout({
     redirect("/login");
   }
 
+  if (!["Admin", "Project Manager", "Staff"].includes(profile.role)) {
+    redirect("/login");
+  }
+
+  const canManageTasks =
+    profile.role === "Admin" || profile.role === "Project Manager";
+
   return (
-    <div className="min-h-screen bg-[#02090d] text-white">
+    <div className="min-h-screen bg-[#f7f7f5] text-white">
       <Sidebar name={profile.name} role={profile.role} />
 
-      <main className="min-h-screen min-w-0 lg:ml-64">
+      <main
+        className="min-h-screen min-w-0 lg:ml-64"
+        style={
+          {
+            "--task-action-display": canManageTasks ? "inline-flex" : "none",
+          } as React.CSSProperties
+        }
+      >
         <DashboardTopbar name={profile.name} role={profile.role} />
 
         {/* PAGE CONTENT */}

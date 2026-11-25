@@ -1,13 +1,9 @@
 "use client";
 
-import {
-  FormEvent,
-  useEffect,
-  useState,
-  type SelectHTMLAttributes,
-} from "react";
-import Link from "next/link";
+import { FormEvent, useEffect, useState } from "react";
+import type { SelectHTMLAttributes } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "../../../../lib/supabase/client";
 
 type Project = {
@@ -16,35 +12,45 @@ type Project = {
 };
 
 const TEXT = {
-  pageTitle: "text-3xl font-semibold tracking-tight text-white",
-  subtitle: "mt-1 text-sm text-zinc-400",
-  label: "block text-sm font-medium text-white",
+  label: "block text-sm font-medium text-[#1f1e30]",
 
   input:
-    "h-[54px] w-full rounded-xl border border-[#2a2a2a] bg-[#1c1c1c] px-4 text-sm text-white outline-none transition-colors placeholder:text-zinc-500 focus:border-[#B7FE1A] disabled:cursor-not-allowed disabled:opacity-50",
+    "h-[54px] w-full rounded-xl border border-[#EEEEEE] bg-white px-4 text-sm text-[#1f1e30] outline-none transition-colors placeholder:text-[#999999] focus:border-[#1f1e30] disabled:cursor-not-allowed disabled:opacity-50",
 
   textarea:
-    "w-full resize-none rounded-xl border border-[#2a2a2a] bg-[#1c1c1c] px-4 py-3 text-sm leading-6 text-white outline-none transition-colors placeholder:text-zinc-500 focus:border-[#B7FE1A] disabled:opacity-50",
+    "w-full resize-y rounded-xl border border-[#EEEEEE] bg-white px-4 py-3 text-sm leading-6 text-[#1f1e30] outline-none transition-colors placeholder:text-[#999999] focus:border-[#1f1e30] disabled:cursor-not-allowed disabled:opacity-50",
 
   primaryButton:
-    "inline-flex items-center justify-center gap-2 rounded-xl bg-[#B7FE1A] px-5 py-3 text-sm font-semibold text-black transition-colors hover:bg-[#caff57] disabled:cursor-not-allowed disabled:opacity-50",
+    "inline-flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#B7FE1A] px-4 text-sm font-[500] text-[#1f1e30] transition-colors hover:bg-[#a8ed12] disabled:cursor-not-allowed disabled:opacity-50 sm:w-[130px]",
 
   secondaryButton:
-    "inline-flex items-center justify-center rounded-xl px-5 py-3 text-sm font-medium text-zinc-400 transition-colors hover:bg-white/[0.05] hover:text-white disabled:cursor-not-allowed disabled:opacity-50",
+    "inline-flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#1f1e30] px-4 text-sm font-normal text-white transition-colors hover:bg-[#333247] disabled:cursor-not-allowed disabled:opacity-50 sm:w-[130px]",
 };
 
 const fieldClass = "flex flex-col gap-2";
 
-const formClass =
-  "flex max-w-4xl flex-col gap-6 rounded-[22px] border border-[#2a2a2a] bg-[#1c1c1c]/80 p-5 sm:p-8";
+const MILESTONE_PHASES = [
+  "Brief",
+  "Pengumpulan Materi",
+  "Design",
+  "Approval",
+  "Development",
+  "Content",
+  "Revisi",
+  "Testing",
+  "Launch",
+];
 
-// Tombol kembali
+const formClass =
+  "flex max-w-5xl flex-col gap-6 rounded-2xl border border-[#EEEEEE] bg-white p-5 shadow-[0_2px_10px_rgba(31,30,48,0.04)] sm:p-8";
+
+// TOMBOL KEMBALI
 function BackLink() {
   return (
-    <div className="mb-5">
+    <div className="mb-6">
       <Link
         href="/dashboard/milestones"
-        className="inline-flex items-center gap-2 text-sm text-zinc-400 transition-colors hover:text-[#B7FE1A]"
+        className="inline-flex cursor-pointer items-center gap-2 text-sm font-semibold text-[#65A30D] transition-colors hover:text-[#4D7C0F]"
       >
         <svg
           width="18"
@@ -65,26 +71,11 @@ function BackLink() {
   );
 }
 
-// Header halaman
-function PageHeader() {
-  return (
-    <header className="mb-8">
-      <BackLink />
-
-      <h1 className={TEXT.pageTitle}>Tambah Tahapan Proyek</h1>
-
-      <p className={TEXT.subtitle}>
-        Tambahkan tahapan untuk mengatur proses pengerjaan proyek.
-      </p>
-    </header>
-  );
-}
-
-// Ikon panah dropdown
+// IKON PANAH DROPDOWN
 function SelectArrow() {
   return (
     <svg
-      className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white"
+      className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#777777]"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -98,7 +89,7 @@ function SelectArrow() {
   );
 }
 
-// Dropdown custom
+// DROPDOWN
 function CustomSelect({
   children,
   className,
@@ -108,7 +99,7 @@ function CustomSelect({
     <div className="relative w-full">
       <select
         {...props}
-        className={`${TEXT.input} appearance-none pr-12 ${className || ""}`}
+        className={`${TEXT.input} appearance-none ${className || ""}`}
       >
         {children}
       </select>
@@ -120,7 +111,7 @@ function CustomSelect({
 
 export default function NewMilestonePage() {
   const router = useRouter();
-  const supabase = createClient();
+  const [supabase] = useState(() => createClient());
 
   const [projects, setProjects] = useState<Project[]>([]);
 
@@ -128,103 +119,230 @@ export default function NewMilestonePage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [dueDate, setDueDate] = useState("");
-  const [status, setStatus] = useState("Pending");
-  const [sortOrder, setSortOrder] = useState(1);
+  const [status, setStatus] = useState("");
+  const [clientVisible, setClientVisible] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  // LOAD PROJECTS
+  // MEMUAT PROYEK AKTIF
   useEffect(() => {
+    let cancelled = false;
+
     async function loadProjects() {
-      const { data, error } = await supabase
-        .from("projects")
-        .select("id, project_name")
-        .order("created_at", { ascending: false });
+      let redirecting = false;
+      setLoading(true);
+      setError("");
 
-      if (error) {
-        setError("Data proyek gagal dimuat. Silakan muat ulang halaman.");
-        setLoading(false);
-        return;
+      try {
+        // VALIDASI ROLE: HANYA ADMIN DAN PROJECT MANAGER BOLEH MENAMBAH MILESTONE
+        const {
+          data: { user },
+          error: authError,
+        } = await supabase.auth.getUser();
+
+        if (authError || !user) {
+          redirecting = true;
+          router.replace("/login");
+          return;
+        }
+
+        const { data: userProfile, error: roleError } = await supabase
+          .from("users")
+          .select("role")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (roleError || !userProfile) {
+          console.error("Gagal memverifikasi role pengguna:", roleError);
+          redirecting = true;
+          router.replace("/dashboard/milestones");
+          return;
+        }
+
+        if (!["Admin", "Project Manager"].includes(userProfile.role)) {
+          redirecting = true;
+          router.replace("/dashboard/milestones");
+          return;
+        }
+
+        let projectQuery = supabase
+          .from("projects")
+          .select("id, project_name")
+          .eq("is_archived", false);
+
+        // Project Manager hanya dapat memilih proyek yang menjadi tanggung jawabnya.
+        if (userProfile.role === "Project Manager") {
+          projectQuery = projectQuery.eq("pic_id", user.id);
+        }
+
+        const { data, error } = await projectQuery.order("created_at", {
+          ascending: false,
+        });
+
+        if (error) {
+          console.error("Gagal memuat proyek:", error);
+          throw new Error(
+            "Data proyek gagal dimuat. Silakan muat ulang halaman.",
+          );
+        }
+
+        if (!cancelled) {
+          setProjects(data || []);
+        }
+      } catch (err) {
+        console.error("Terjadi kesalahan saat memuat proyek:", err);
+
+        if (!cancelled) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Data proyek gagal dimuat. Silakan muat ulang halaman.",
+          );
+        }
+      } finally {
+        // Jangan tampilkan form ketika pengguna sedang diarahkan karena tidak berhak.
+        if (!cancelled && !redirecting) {
+          setLoading(false);
+        }
       }
-
-      setProjects(data || []);
-      setLoading(false);
     }
 
     loadProjects();
 
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [router, supabase]);
 
-  // CREATE MILESTONE
+  // SIMPAN MILESTONE
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
-    setSaving(true);
+    if (saving) return;
+
     setError("");
 
     if (!projectId) {
       setError("Silakan pilih proyek terlebih dahulu.");
-      setSaving(false);
       return;
     }
 
     if (!name.trim()) {
-      setError("Nama tahapan proyek wajib diisi.");
-      setSaving(false);
+      setError("Milestone proyek wajib diisi.");
       return;
     }
 
-    const { error } = await supabase.from("milestones").insert({
-      project_id: projectId,
-      name: name.trim(),
-      description: description.trim() || null,
-      due_date: dueDate || null,
-      status,
-      sort_order: sortOrder,
-    });
+    setSaving(true);
 
-    if (error) {
-      setError(error.message);
+    try {
+      // VERIFIKASI LOGIN DAN ROLE KEMBALI SAAT MENYIMPAN.
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError || !user) {
+        throw new Error("Sesi pengguna tidak valid. Silakan login kembali.");
+      }
+
+      const { data: userProfile, error: roleError } = await supabase
+        .from("users")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (roleError || !userProfile) {
+        throw new Error("Gagal memverifikasi hak akses pengguna.");
+      }
+
+      if (!["Admin", "Project Manager"].includes(userProfile.role)) {
+        throw new Error("Kamu tidak memiliki izin menambahkan milestone.");
+      }
+
+      // PASTIKAN PROYEK AKTIF DAN, UNTUK PM, MERUPAKAN PROYEK MILIKNYA.
+      let selectedProjectQuery = supabase
+        .from("projects")
+        .select("id")
+        .eq("id", projectId)
+        .eq("is_archived", false);
+
+      if (userProfile.role === "Project Manager") {
+        selectedProjectQuery = selectedProjectQuery.eq("pic_id", user.id);
+      }
+
+      const { data: selectedProject, error: selectedProjectError } =
+        await selectedProjectQuery.maybeSingle();
+
+      if (selectedProjectError || !selectedProject) {
+        throw new Error(
+          "Proyek tidak ditemukan atau kamu tidak memiliki akses untuk menambahkan milestone pada proyek ini.",
+        );
+      }
+
+      // AMBIL URUTAN MILESTONE TERAKHIR PADA PROYEK
+      const { data: lastMilestone, error: orderError } = await supabase
+        .from("milestones")
+        .select("sort_order")
+        .eq("project_id", projectId)
+        .order("sort_order", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (orderError) {
+        console.error("Gagal mengambil urutan milestone:", orderError);
+        throw new Error("Gagal menentukan urutan tahapan. Silakan coba lagi.");
+      }
+
+      const nextSortOrder = Number(lastMilestone?.sort_order ?? 0) + 1;
+
+      // INSERT MILESTONE
+      const { error: insertError } = await supabase.from("milestones").insert({
+        project_id: projectId,
+        name: name.trim(),
+        description: description.trim() || null,
+        due_date: dueDate || null,
+        status,
+        sort_order: nextSortOrder,
+        client_visible: clientVisible,
+      });
+
+      if (insertError) {
+        console.error("Gagal menyimpan milestone:", insertError);
+        throw new Error("Milestone gagal disimpan. " + insertError.message);
+      }
+
+      window.location.assign(
+        `/dashboard/milestones?success=created&expanded=${encodeURIComponent(projectId)}`,
+      );
+    } catch (err) {
+      console.error("Terjadi kesalahan saat menyimpan milestone:", err);
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Terjadi kesalahan saat menyimpan milestone. Silakan coba lagi.",
+      );
+
       setSaving(false);
-      return;
     }
-
-    router.push("/dashboard/milestones");
-    router.refresh();
-  }
-
-  // LOADING STATE
-  if (loading) {
-    return (
-      <main className="min-h-screen bg-[#111111] px-5 py-6 text-white sm:px-7 lg:px-8">
-        <PageHeader />
-
-        <div className={formClass}>
-          <p className="text-sm text-zinc-400">Memuat data proyek...</p>
-        </div>
-      </main>
-    );
   }
 
   return (
-    <main className="min-h-screen bg-[#111111] px-5 py-6 text-white sm:px-7 lg:px-8">
-      {/* HEADER */}
-      <PageHeader />
+    <main className="min-h-screen bg-[#f7f7f5] px-5 py-6 text-[#1f1e30] sm:px-7 lg:px-8">
+      <BackLink />
 
-      {/* ERROR */}
       {error && (
         <div
           role="alert"
-          className="mb-6 max-w-4xl rounded-xl border border-red-500/20 bg-red-500/[0.06] px-4 py-3 text-sm text-red-400"
+          className="mb-6 max-w-4xl rounded-xl border border-red-200 bg-white px-4 py-3 text-sm text-red-600"
         >
           {error}
         </div>
       )}
 
-      {/* FORM */}
+      {/* FORM TAMBAH MILESTONE */}
       <form onSubmit={handleSubmit} className={formClass}>
         {/* PROYEK */}
         <div className={fieldClass}>
@@ -236,10 +354,12 @@ export default function NewMilestonePage() {
             id="projectId"
             value={projectId}
             onChange={(e) => setProjectId(e.target.value)}
-            disabled={saving || projects.length === 0}
+            disabled={loading || saving || projects.length === 0}
             required
           >
-            <option value="">Pilih proyek</option>
+            <option value="" disabled hidden>
+              Pilih proyek
+            </option>
 
             {projects.map((project) => (
               <option key={project.id} value={project.id}>
@@ -249,9 +369,9 @@ export default function NewMilestonePage() {
           </CustomSelect>
 
           {projects.length === 0 && (
-            <p className="text-xs leading-5 text-zinc-500">
-              Belum ada proyek. Tambahkan proyek terlebih dahulu sebelum membuat
-              tahapan proyek.
+            <p className="text-xs leading-5 text-[#999999]">
+              Belum ada proyek aktif. Tambahkan proyek terlebih dahulu sebelum
+              membuat tahapan proyek.
             </p>
           )}
         </div>
@@ -259,19 +379,26 @@ export default function NewMilestonePage() {
         {/* NAMA TAHAPAN */}
         <div className={fieldClass}>
           <label htmlFor="name" className={TEXT.label}>
-            Nama Tahapan <span className="text-red-500">*</span>
+            Milestone <span className="text-red-500">*</span>
           </label>
 
-          <input
+          <CustomSelect
             id="name"
-            type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Contoh: Desain Halaman Utama"
-            className={TEXT.input}
             disabled={saving}
             required
-          />
+          >
+            <option value="" disabled hidden>
+              Pilih milestone proyek
+            </option>
+
+            {MILESTONE_PHASES.map((phase) => (
+              <option key={phase} value={phase}>
+                {phase}
+              </option>
+            ))}
+          </CustomSelect>
         </div>
 
         {/* DESKRIPSI */}
@@ -285,14 +412,10 @@ export default function NewMilestonePage() {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={4}
-            placeholder="Jelaskan tahapan yang akan dikerjakan..."
-            className={TEXT.textarea}
+            placeholder="Tambahkan deskripsi tahapan proyek"
+            className={`${TEXT.textarea} min-h-[120px]`}
             disabled={saving}
           />
-
-          <p className="text-xs leading-5 text-zinc-500">
-            Berikan penjelasan singkat mengenai tahapan proyek.
-          </p>
         </div>
 
         {/* TENGGAT WAKTU */}
@@ -305,51 +428,63 @@ export default function NewMilestonePage() {
             id="dueDate"
             type="date"
             value={dueDate}
+            onClick={(e) => {
+              if (!saving) e.currentTarget.showPicker();
+            }}
             onChange={(e) => setDueDate(e.target.value)}
             disabled={saving}
-            className={`${TEXT.input} pr-12 [&::-webkit-calendar-picker-indicator]:mr-1`}
+            className={`${TEXT.input} !pr-4 cursor-pointer [color-scheme:light]`}
           />
         </div>
 
-        {/* STATUS & URUTAN */}
-        <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-          <div className={fieldClass}>
-            <label htmlFor="status" className={TEXT.label}>
-              Status Tahapan
-            </label>
+        {/* STATUS */}
+        <div className={fieldClass}>
+          <label htmlFor="status" className={TEXT.label}>
+            Status Milestone
+          </label>
 
-            <CustomSelect
-              id="status"
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              disabled={saving}
-            >
-              <option value="Pending">Menunggu</option>
-              <option value="In Progress">Dalam Proses</option>
-              <option value="Completed">Selesai</option>
-            </CustomSelect>
-          </div>
+          <CustomSelect
+            id="status"
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            disabled={saving}
+          >
+            <option value="" disabled hidden>
+              Pilih status milestone
+            </option>
+            <option value="Pending">Belum Dimulai</option>
+            <option value="In Progress">Berjalan</option>
+            <option value="Ditunda">Ditunda</option>
+            <option value="Completed">Selesai</option>
+          </CustomSelect>
+        </div>
 
-          <div className={fieldClass}>
-            <label htmlFor="sortOrder" className={TEXT.label}>
-              Urutan Tahapan
-            </label>
+        {/* VISIBILITAS KLIEN */}
+        <div className="flex items-start gap-3 rounded-xl border border-[#EEEEEE] bg-[#f7f7f5] p-4">
+          <input
+            id="clientVisible"
+            type="checkbox"
+            checked={clientVisible}
+            onChange={(e) => setClientVisible(e.target.checked)}
+            disabled={saving}
+            aria-label="Tampilkan kepada Klien"
+            className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-[#B7FE1A] disabled:cursor-not-allowed"
+          />
 
-            <input
-              id="sortOrder"
-              type="number"
-              min="1"
-              value={sortOrder}
-              onChange={(e) => setSortOrder(Number(e.target.value))}
-              className={TEXT.input}
-              disabled={saving}
-              required
-            />
+          <div>
+            <p className="text-sm font-medium text-[#1f1e30]">
+              Tampilkan kepada Klien
+            </p>
+
+            <p className="mt-1 text-xs leading-5 text-[#777777]">
+              Aktifkan untuk menampilkan milestone kepada klien melalui halaman
+              publik proyek.
+            </p>
           </div>
         </div>
 
-        {/* TOMBOL */}
-        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+        {/* TOMBOL AKSI */}
+        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
           <button
             type="button"
             onClick={() => router.push("/dashboard/milestones")}
@@ -361,17 +496,10 @@ export default function NewMilestonePage() {
 
           <button
             type="submit"
-            disabled={saving || projects.length === 0}
+            disabled={loading || saving || projects.length === 0}
             className={TEXT.primaryButton}
           >
-            {saving ? (
-              <>
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-black/30 border-t-black" />
-                Menyimpan...
-              </>
-            ) : (
-              "Simpan Tahapan"
-            )}
+            {saving ? "Menyimpan..." : "Tambah"}
           </button>
         </div>
       </form>

@@ -2,22 +2,23 @@ import Link from "next/link";
 import { createClient } from "../../../lib/supabase/server";
 import { requireRole } from "../../auth/role-guard";
 import CopyPublicLink from "../../../components/copy-public-link";
-import ProjectActions from "./ProjectActions";
+import ProjectActions, { ProjectDeleteNotification, ProjectsSearch } from "./ProjectActions";
 
-const TEXT = {
-  pageTitle: "text-3xl font-semibold tracking-tight text-white",
-  sectionTitle: "text-lg font-semibold text-white",
-  subtitle: "mt-1 text-sm text-zinc-400",
-  primary: "text-sm font-medium text-white",
-  secondary: "text-sm text-[#A5BDCC]",
-  action:
-    "rounded-lg px-3 py-2 text-sm font-medium text-[#B7FE1A] transition-colors hover:bg-white/[0.05] hover:text-[#caff57]",
-  primaryButton:
-    "inline-flex w-fit items-center gap-2 rounded-xl bg-[#B7FE1A] px-5 py-3 text-sm font-semibold text-black transition-colors hover:bg-[#caff57]",
+type ProjectsPageProps = {
+  searchParams: Promise<{
+    search?: string;
+  }>;
 };
 
-const STATUS = {
-  COMPLETED: 11,
+const TEXT = {
+  sectionTitle: "text-lg font-semibold text-[#1f1e30]",
+  subtitle: "mt-1 text-sm text-[#777777]",
+  primary: "text-sm font-medium text-[#1f1e30]",
+  secondary: "text-sm text-[#555563]",
+  primaryButton:
+    "inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#B7FE1A] px-4 text-sm font-[500] text-[#1f1e30] transition-colors hover:bg-[#a8ed12] sm:w-[130px]",
+  secondaryButton:
+    "inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#1f1e30] px-4 text-sm font-[500] text-white transition-colors hover:bg-[#333247] sm:w-[130px]",
 };
 
 type DeadlineInfo = {
@@ -42,12 +43,12 @@ function getJakartaDateKey() {
 
 function getDeadlineInfo(
   deadline: string | null | undefined,
-  statusId: number | null | undefined,
+  status: string | null | undefined,
 ): DeadlineInfo | null {
   if (!deadline) return null;
 
   // Proyek selesai tidak dihitung terlambat.
-  if (statusId === STATUS.COMPLETED) {
+  if (status?.trim().toLowerCase() === "selesai") {
     return {
       label: "Selesai",
       type: "completed",
@@ -87,146 +88,339 @@ function getDeadlineInfo(
   };
 }
 
-export default async function ProjectsPage() {
+export default async function ProjectsPage({
+  searchParams,
+}: ProjectsPageProps) {
   const profile = await requireRole(["Admin", "Project Manager", "Staff"]);
 
   const supabase = await createClient();
 
-  const { data: projects, error } = await supabase
+  const params = await searchParams;
+  const search = params.search?.trim() || "";
+  const keyword = search.replace(/[,%()]/g, "").trim();
+
+  // Semua role dapat melihat seluruh proyek aktif.
+  let query = supabase
     .from("projects")
     .select(
       `
       *,
-      clients (
+      clients:clients!projects_client_id_fkey (
         company_name
       ),
       project_statuses (
         name
+      ),
+      project_manager:users!projects_pic_id_fkey (
+        name
+      ),
+      staff_pic:users!projects_pic_fkey (
+        name
+      ),
+      tasks (
+        status
       )
     `,
     )
-    .order("created_at", {
-      ascending: false,
-    });
+    .eq("is_archived", false);
+
+  if (keyword) {
+    // Cari ID relasi yang cocok agar seluruh pencarian dapat dilakukan
+    // langsung melalui query Supabase, termasuk nama klien, status,
+    // Project Manager, dan Staff PIC.
+    const pattern = `%${keyword}%`;
+
+    const [
+      { data: matchingUsers, error: usersError },
+      { data: matchingClients, error: clientsError },
+      { data: matchingStatuses, error: statusesError },
+    ] = await Promise.all([
+      supabase.from("users").select("id").ilike("name", pattern),
+      supabase.from("clients").select("id").ilike("company_name", pattern),
+      supabase.from("project_statuses").select("id").ilike("name", pattern),
+    ]);
+
+    if (usersError || clientsError || statusesError) {
+      console.error("Gagal mencari data relasi proyek:", {
+        usersError,
+        clientsError,
+        statusesError,
+      });
+
+      return (
+        <main className="min-h-screen bg-[#f7f7f5] px-5 py-6 text-[#1f1e30] sm:px-7 lg:px-8">
+          <div className="max-w-4xl rounded-2xl border border-red-200 bg-white p-5 text-sm text-red-600">
+            Pencarian proyek gagal dilakukan. Silakan muat ulang halaman.
+          </div>
+        </main>
+      );
+    }
+
+    const matchingUserIds = (matchingUsers ?? []).map((user) => user.id);
+    const matchingClientIds = (matchingClients ?? []).map(
+      (client) => client.id,
+    );
+    const matchingStatusIds = (matchingStatuses ?? []).map(
+      (status) => status.id,
+    );
+
+    const filters = [
+      `project_name.ilike.${pattern}`,
+      `project_type.ilike.${pattern}`,
+    ];
+
+    if (matchingClientIds.length > 0) {
+      filters.push(`client_id.in.(${matchingClientIds.join(",")})`);
+    }
+
+    if (matchingStatusIds.length > 0) {
+      filters.push(`status_id.in.(${matchingStatusIds.join(",")})`);
+    }
+
+    if (matchingUserIds.length > 0) {
+      filters.push(`pic_id.in.(${matchingUserIds.join(",")})`);
+      filters.push(`pic.in.(${matchingUserIds.join(",")})`);
+    }
+
+    query = query.or(filters.join(","));
+  }
+
+  const { data: projects, error } = await query.order("created_at", {
+    ascending: false,
+  });
 
   if (error) {
-    return (
-      <main className="min-h-screen bg-[#111111] px-5 py-6 text-white sm:px-7 lg:px-8">
-        <div className="mb-8 mt-2">
-          <h1 className={TEXT.pageTitle}>Data Proyek</h1>
-          <p className={TEXT.subtitle}>
-            Kelola proyek pengembangan website klien
-          </p>
-        </div>
+    console.error("Gagal memuat proyek:", error);
 
-        <div className="max-w-4xl rounded-[22px] border border-red-500/20 bg-[#1c1c1c]/80 p-5 text-sm text-red-400">
+    return (
+      <main className="min-h-screen bg-[#f7f7f5] px-5 py-6 text-[#1f1e30] sm:px-7 lg:px-8">
+        <div className="max-w-4xl rounded-2xl border border-red-200 bg-white p-5 text-sm text-red-600">
           Data proyek gagal dimuat. Silakan muat ulang halaman.
         </div>
       </main>
     );
   }
 
-  return (
-    <main className="min-h-screen bg-[#111111] px-5 py-6 text-white sm:px-7 lg:px-8">
-      {/* HEADER */}
-      <div className="mb-8 mt-2 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className={TEXT.pageTitle}>Data Proyek</h1>
-          <p className={TEXT.subtitle}>
-            Kelola proyek pengembangan website klien
-          </p>
-        </div>
+  const filteredProjects = projects ?? [];
 
-        <Link
-          href="/dashboard/projects/new"
-          className={`${TEXT.primaryButton} w-full sm:w-auto`}
-        >
-          Tambah Proyek
-        </Link>
+  const isStaff = profile.role === "Staff";
+  const isAdmin = profile.role === "Admin";
+  const canManage = isAdmin || profile.role === "Project Manager";
+
+  return (
+    <main className="min-h-screen bg-[#f7f7f5] px-5 py-6 text-[#1f1e30] sm:px-7 lg:px-8">
+      <ProjectDeleteNotification />
+      {/* HEADER */}
+      <div className="mb-8 mt-2 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        {/* SEARCH */}
+        <ProjectsSearch search={search} />
+
+        {/* TOMBOL AKSI */}
+        {canManage && (
+          <div className="flex flex-col gap-2 sm:flex-row">
+            {isAdmin && (
+              <Link
+                href="/dashboard/projects/archive"
+                className={TEXT.secondaryButton}
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <rect x="3" y="4" width="18" height="4" rx="1" />
+                  <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8" />
+                  <path d="M10 12h4" />
+                </svg>
+                Arsip
+              </Link>
+            )}
+
+            <Link href="/dashboard/projects/new" className={TEXT.primaryButton}>
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M12 5v14" />
+                <path d="M5 12h14" />
+              </svg>
+              Tambah
+            </Link>
+          </div>
+        )}
       </div>
 
       {/* DAFTAR PROYEK */}
-      <section className="max-w-full overflow-hidden rounded-[22px] border border-[#2a2a2a] bg-[#1c1c1c]/80">
-        <div className="border-b border-[#262626] px-6 py-5 sm:px-8">
+      <section className="max-w-full overflow-hidden rounded-2xl border border-[#EEEEEE] bg-white shadow-[0_2px_10px_rgba(31,30,48,0.04)]">
+        <div className="border-b border-[#EEEEEE] px-5 py-5 sm:px-6">
           <h2 className={TEXT.sectionTitle}>Daftar Proyek</h2>
+
           <p className={TEXT.subtitle}>
-            {projects?.length ?? 0} proyek terdaftar
+            {filteredProjects.length} proyek terdaftar
           </p>
         </div>
 
-        {projects && projects.length > 0 ? (
-          <div className="projects-scrollbar overflow-x-auto">
-            <table className="w-full min-w-[1050px]">
+        {filteredProjects.length > 0 ? (
+          <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-[#D6D3D1] scrollbar-track-transparent hover:scrollbar-thumb-[#A8A8A8]">
+            <table
+              className={`w-full ${
+                isStaff ? "min-w-[1050px]" : "min-w-[1150px]"
+              } border-collapse text-left`}
+            >
               <thead>
-                <tr className="border-b border-[#262626] text-left text-xs font-medium uppercase tracking-wide text-zinc-400">
-                  <th className="px-6 py-4">Nama Proyek</th>
-                  <th className="px-6 py-4">Nama Klien</th>
-                  <th className="px-6 py-4">Status Proyek</th>
-                  <th className="px-6 py-4">Progres</th>
-                  <th className="px-6 py-4">Tenggat Waktu</th>
-                  <th className="px-6 py-4">Tautan Publik</th>
-                  <th className="px-6 py-4">Tindakan</th>
+                <tr className="border-b border-[#EEEEEE] bg-[#fafaf9] text-left text-xs font-semibold uppercase tracking-wide text-[#777777]">
+                  <th className="w-[360px] min-w-[360px] whitespace-nowrap px-7 py-4">
+                    Nama Proyek
+                  </th>
+                  <th className="whitespace-nowrap px-7 py-4">Nama Klien</th>
+                  <th className="whitespace-nowrap px-7 py-4">PIC</th>
+                  <th className="whitespace-nowrap px-7 py-4">Status Proyek</th>
+                  <th className="px-7 py-4">Progres</th>
+                  <th className="whitespace-nowrap px-7 py-4">Tenggat Waktu</th>
+                  <th className="whitespace-nowrap px-7 py-4">Visibilitas</th>
+                  <th className="px-7 py-4">Tautan Publik</th>
+                  {!isStaff && (
+                    <th className="px-7 py-4 text-center">Tindakan</th>
+                  )}
                 </tr>
               </thead>
 
               <tbody>
-                {projects.map((project) => {
+                {filteredProjects.map((project) => {
                   const statusRelation = project.project_statuses;
+
                   const projectStatus = Array.isArray(statusRelation)
                     ? statusRelation[0]?.name
                     : statusRelation?.name;
 
                   const deadlineInfo = getDeadlineInfo(
                     project.deadline,
-                    project.status_id,
+                    projectStatus,
                   );
+
+                  const projectTasks = Array.isArray(project.tasks)
+                    ? project.tasks
+                    : [];
+
+                  const completedTasks = projectTasks.filter(
+                    (task: { status: string | null }) => {
+                      const taskStatus = task.status?.trim().toLowerCase();
+
+                      return (
+                        taskStatus !== undefined &&
+                        taskStatus !== null &&
+                        ["done", "selesai", "completed"].includes(taskStatus)
+                      );
+                    },
+                  ).length;
+
+                  const progress =
+                    projectTasks.length > 0
+                      ? Math.round((completedTasks / projectTasks.length) * 100)
+                      : 0;
 
                   return (
                     <tr
                       key={project.id}
-                      className="border-b border-[#262626] transition-colors last:border-b-0 hover:bg-white/[0.02]"
+                      className="border-b border-[#EEEEEE] last:border-b-0"
                     >
                       {/* NAMA PROYEK */}
-                      <td className="px-6 py-4">
-                        <p className={TEXT.primary}>
+                      <td className="w-[360px] min-w-[360px] px-7 py-4">
+                        <p className="line-clamp-2 text-sm font-medium text-[#1f1e30]">
                           {project.project_name || "-"}
                         </p>
-                        <p className="mt-1 text-xs text-zinc-500">
+
+                        <p className="mt-1 text-xs text-gray-500">
                           {project.project_type || "-"}
                         </p>
                       </td>
 
                       {/* KLIEN */}
-                      <td className={`px-6 py-4 ${TEXT.secondary}`}>
+                      <td className={`px-7 py-4 ${TEXT.secondary}`}>
                         {Array.isArray(project.clients)
                           ? project.clients[0]?.company_name || "-"
                           : project.clients?.company_name || "-"}
                       </td>
 
-                      {/* STATUS TAHAP PROYEK */}
-                      <td className="px-6 py-4">
+                      {/* PIC PROYEK */}
+                      <td className="whitespace-nowrap px-7 py-4">
+                        <div className="flex flex-col gap-2">
+                          {(() => {
+                            const manager = Array.isArray(project.project_manager)
+                              ? project.project_manager[0]
+                              : project.project_manager;
+                            const staff = Array.isArray(project.staff_pic)
+                              ? project.staff_pic[0]
+                              : project.staff_pic;
+
+                            return (
+                              <>
+                                <div>
+                                  <p className="text-sm font-medium text-[#1f1e30]">
+                                    {manager?.name || "-"}
+                                  </p>
+                                  {manager?.role && (
+                                    <p className="mt-0.5 text-xs text-[#777777]">
+                                      {manager.role}
+                                    </p>
+                                  )}
+                                </div>
+                                {staff?.name && (
+                                  <div>
+                                    <p className="text-sm font-medium text-[#1f1e30]">
+                                      {staff.name}
+                                    </p>
+                                    {staff.role && (
+                                      <p className="mt-0.5 text-xs text-[#777777]">
+                                        {staff.role}
+                                      </p>
+                                    )}
+                                  </div>
+                                )}
+                              </>
+                            );
+                          })()}
+                        </div>
+                      </td>
+
+                      {/* STATUS PROYEK */}
+                      <td className="px-7 py-4">
                         <ProjectStatusBadge status={projectStatus} />
                       </td>
 
                       {/* PROGRES */}
-                      <td className="px-6 py-4">
+                      <td className="px-7 py-4">
                         <div className="w-32">
                           <div className="mb-2 flex items-center justify-between gap-3">
-                            <span className="text-xs text-zinc-400">
+                            <span className="text-xs text-[#777777]">
                               Progres
                             </span>
-                            <span className="text-xs font-medium text-white">
-                              {project.progress ?? 0}%
+
+                            <span className="text-xs font-medium text-[#1f1e30]">
+                              {progress}%
                             </span>
                           </div>
 
-                          <div className="h-1.5 overflow-hidden rounded-full bg-[#333333]">
+                          <div className="h-1.5 overflow-hidden rounded-full bg-[#EEEEEE]">
                             <div
                               className="h-full rounded-full bg-[#B7FE1A] transition-all"
                               style={{
                                 width: `${Math.min(
                                   100,
-                                  Math.max(0, Number(project.progress ?? 0)),
+                                  Math.max(0, progress),
                                 )}%`,
                               }}
                             />
@@ -235,9 +429,9 @@ export default async function ProjectsPage() {
                       </td>
 
                       {/* TENGGAT WAKTU */}
-                      <td className="px-6 py-4">
+                      <td className="px-7 py-4">
                         <div className="flex flex-col items-start gap-2">
-                          <span className={TEXT.secondary}>
+                          <span className="whitespace-nowrap text-left text-xs text-[#555563]">
                             {project.deadline
                               ? new Date(
                                   `${String(project.deadline).slice(0, 10)}T00:00:00Z`,
@@ -259,15 +453,28 @@ export default async function ProjectsPage() {
                         </div>
                       </td>
 
+                      {/* VISIBILITAS */}
+                      <td className="whitespace-nowrap px-7 py-4">
+                        <span
+                          className={`inline-flex items-center justify-center rounded-full px-3 py-1 text-xs font-medium text-[#1f1e30] ${
+                            project.public_visibility
+                              ? "bg-[#f1ffcc]"
+                              : "bg-[#F5F5F4]"
+                          }`}
+                        >
+                          {project.public_visibility ? "Klien" : "Internal"}
+                        </span>
+                      </td>
+
                       {/* TAUTAN PUBLIK */}
-                      <td className="px-6 py-4">
+                      <td className="px-7 py-4">
                         {project.public_visibility && project.public_token ? (
                           <div className="flex items-center gap-2">
                             <a
                               href={`/project/${project.public_token}`}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="inline-flex items-center rounded-lg border border-[#333333] px-3 py-2 text-xs font-medium text-zinc-300 transition-colors hover:border-[#B7FE1A] hover:text-[#B7FE1A]"
+                              className="inline-flex cursor-pointer items-center justify-center rounded-lg bg-[#1f1e30] px-3 py-1.5 text-sm font-normal text-white transition-colors hover:bg-[#333247]"
                             >
                               Buka
                             </a>
@@ -275,22 +482,33 @@ export default async function ProjectsPage() {
                             <CopyPublicLink token={project.public_token} />
                           </div>
                         ) : (
-                          <span className="inline-flex items-center rounded-full bg-[#262626] px-3 py-1 text-xs font-medium text-zinc-500">
+                          <span className="inline-flex items-center rounded-full bg-[#F5F5F4] px-3 py-1 text-xs font-medium text-[#777777]">
                             Nonaktif
                           </span>
                         )}
                       </td>
 
                       {/* TINDAKAN */}
-                      <td className="px-6 py-4">
-                        <ProjectActions
-                          projectId={project.id}
-                          projectName={
-                            project.project_name || "Proyek tanpa nama"
-                          }
-                          canDelete={profile.role === "Admin"}
-                        />
-                      </td>
+                      {!isStaff && (
+                        <td
+                          className={`px-7 py-4 ${isAdmin ? "" : "text-center"}`}
+                        >
+                          <div className={isAdmin ? "" : "flex justify-center"}>
+                            <ProjectActions
+                              projectId={project.id}
+                              projectName={
+                                project.project_name || "Proyek tanpa nama"
+                              }
+                              canDelete={
+                                isAdmin ||
+                                (profile.role === "Project Manager" &&
+                                  project.pic_id === profile.id)
+                              }
+                              canArchive={isAdmin}
+                            />
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -298,25 +516,33 @@ export default async function ProjectsPage() {
             </table>
           </div>
         ) : (
-          <div className="px-5 py-14 text-center">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-[#262626]">
+          <div
+            className={`flex flex-col items-center justify-center px-5 py-13 text-center ${
+              isStaff ? "min-h-[254px]" : ""
+            }`}
+          >
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-[#F1FFCC]">
               <ProjectIcon />
             </div>
 
-            <h3 className="mt-4 text-sm font-semibold text-white">
-              Belum Ada Proyek
+            <h3 className="mt-4 text-sm font-semibold text-[#1f1e30]">
+              {search ? "Proyek Tidak Ditemukan" : "Belum Ada Proyek"}
             </h3>
 
-            <p className="mt-1 text-sm text-zinc-400">
-              Tambahkan proyek untuk mulai memantau progres pekerjaan klien.
+            <p className="mt-1 text-sm text-[#777777]">
+              {search
+                ? "Tidak ada proyek yang sesuai dengan pencarian."
+                : "Belum ada proyek yang terdaftar untuk ditampilkan."}
             </p>
 
-            <Link
-              href="/dashboard/projects/new"
-              className={`${TEXT.primaryButton} mt-5`}
-            >
-              Tambah Proyek Pertama
-            </Link>
+            {!search && canManage && (
+              <Link
+                href="/dashboard/projects/new"
+                className="mt-5 inline-flex items-center justify-center whitespace-nowrap text-sm font-medium text-[#65A30D] transition-colors hover:text-[#4D7C0F]"
+              >
+                Tambah Proyek Pertama
+              </Link>
+            )}
           </div>
         )}
       </section>
@@ -332,24 +558,16 @@ function DeadlineBadge({
   type: "overdue" | "today" | "upcoming" | "completed";
 }) {
   const styles = {
-    overdue: "bg-[#451D26] text-[#FF7185]",
-    today: "bg-[#49351A] text-[#FFC46B]",
-    upcoming: "bg-[#202D24] text-[#86D9A1]",
-    completed: "bg-[#075C3C] text-[#6EE7B7]",
-  };
-
-  const dots = {
-    overdue: "bg-[#FF4567]",
-    today: "bg-[#FFC46B]",
-    upcoming: "bg-[#86D9A1]",
-    completed: "bg-[#6EE7B7]",
+    overdue: "bg-[#fce2d3] text-[#1f1e30]",
+    today: "bg-[#feefd2] text-[#1f1e30]",
+    upcoming: "bg-[#E8F5C8] text-[#1f1e30]",
+    completed: "bg-[#DCE8F2] text-[#1f1e30]",
   };
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-medium ${styles[type]}`}
+      className={`inline-flex h-6 w-fit shrink-0 items-center justify-center whitespace-nowrap rounded-full px-4 text-center text-[10px] font-semibold ${styles[type]}`}
     >
-      <span className={`h-1.5 w-1.5 rounded-full ${dots[type]}`} />
       {label}
     </span>
   );
@@ -358,32 +576,19 @@ function DeadlineBadge({
 function ProjectStatusBadge({ status }: { status: string | null | undefined }) {
   const normalizedStatus = status?.toLowerCase().trim() ?? "";
 
-  const isCompleted =
-    normalizedStatus.includes("completed") ||
-    normalizedStatus.includes("selesai");
+  const statusStyles: Record<string, string> = {
+    "menunggu antrian": "bg-[#e2e8e0]",
+    berjalan: "bg-[#f1ffcc]",
+    ditunda: "bg-[#feefd2]",
+    selesai: "bg-[#DCE8F2]",
+  };
 
-  const isActive =
-    normalizedStatus.includes("progress") ||
-    normalizedStatus.includes("berjalan") ||
-    normalizedStatus.includes("active");
-
-  const badgeClass = isCompleted
-    ? "bg-[#075C3C] text-[#6EE7B7]"
-    : isActive
-      ? "bg-[#343B19] text-[#B7FE1A]"
-      : "bg-[#262626] text-zinc-400";
-
-  const dotClass = isCompleted
-    ? "bg-[#6EE7B7]"
-    : isActive
-      ? "bg-[#B7FE1A]"
-      : "bg-zinc-500";
+  const badgeColor = statusStyles[normalizedStatus] ?? "bg-[#F5F5F4]";
 
   return (
     <span
-      className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full px-3 py-1 text-xs font-medium ${badgeClass}`}
+      className={`inline-flex items-center justify-center whitespace-nowrap rounded-full px-4 py-1 text-xs font-medium text-[#1f1e30] ${badgeColor}`}
     >
-      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotClass}`} />
       {status || "-"}
     </span>
   );
@@ -392,21 +597,14 @@ function ProjectStatusBadge({ status }: { status: string | null | undefined }) {
 function ProjectIcon() {
   return (
     <span
-      className="material-symbols-outlined inline-flex items-center justify-center"
+      className="material-symbols-outlined"
       aria-hidden="true"
       style={{
         fontSize: "22px",
+        color: "#1f1e30",
         fontWeight: 400,
-        fontStyle: "normal",
         lineHeight: 1,
-        letterSpacing: "normal",
-        textTransform: "none",
-        whiteSpace: "nowrap",
-        wordWrap: "normal",
-        direction: "ltr",
         fontFeatureSettings: '"liga"',
-        WebkitFontSmoothing: "antialiased",
-        color: "#B7FE1A",
       }}
     >
       folder_open
